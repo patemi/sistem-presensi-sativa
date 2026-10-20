@@ -1,0 +1,161 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================
+// ORGANISASI & LOKASI KANTOR
+// ============================================
+
+model Organization {
+  id         String   @id @default(uuid())
+  name       String
+  inviteCode String   @unique @map("invite_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  divisions         Division[]
+  users             User[]
+  officeLocations   OfficeLocation[]
+  wellbeingFeedback WellbeingFeedback[]
+
+  @@map("organizations")
+}
+
+model OfficeLocation {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  label          String
+  latitude       Float
+  longitude      Float
+  radiusMeters   Int          @default(100) @map("radius_meters")
+
+  attendanceCheckins AttendanceCheckin[]
+
+  @@map("office_locations")
+}
+
+// ============================================
+// DIVISI & USER
+// ============================================
+
+model Division {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+
+  users              User[]
+  wellbeingFeedback  WellbeingFeedback[]
+  wellbeingInsights  DivisionWellbeingInsight[]
+
+  @@map("divisions")
+}
+
+model User {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  divisionId     String?      @map("division_id")
+  division       Division?    @relation(fields: [divisionId], references: [id])
+  role           String       // 'karyawan', 'hr', 'owner'
+  fullName       String       @map("full_name")
+  email          String       @unique
+  passwordHash   String       @map("password_hash")
+  shiftStart     String       @default("08:00") @map("shift_start")
+  shiftEnd       String       @default("17:00") @map("shift_end")
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  // Kode Undangan Unik Per Karyawan & Pelacakan Status Login
+  inviteCode     String?      @unique @map("invite_code")
+  inviteStatus   String       @default("pending") @map("invite_status") // 'pending' | 'sent' | 'joined'
+  invitedAt      DateTime?    @map("invited_at")
+  lastLoginAt    DateTime?    @map("last_login_at")
+
+  attendanceCheckins  AttendanceCheckin[]
+  attendanceCheckouts AttendanceCheckout[]
+
+  @@map("users")
+}
+
+// ============================================
+// PRESENSI (IDENTIFIKATIF — HR bisa lihat nama)
+// ============================================
+
+model AttendanceCheckin {
+  id               String          @id @default(uuid())
+  userId           String          @map("user_id")
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  officeLocationId String?         @map("office_location_id")
+  officeLocation   OfficeLocation? @relation(fields: [officeLocationId], references: [id])
+  checkInTime      DateTime        @map("check_in_time")
+  latitude         Float
+  longitude        Float
+  distanceMeters   Float           @map("distance_meters")
+  isWithinGeofence Boolean         @map("is_within_geofence")
+  lateMinutes      Int             @default(0) @map("late_minutes")
+  attendanceStatus String          @default("belum_lengkap") @map("attendance_status")
+  // 'belum_lengkap' -> 'hadir' (setelah checkout+feedback) / 'tidak_lengkap' (timeout midnight)
+
+  checkout AttendanceCheckout?
+
+  @@map("attendance_checkins")
+}
+
+model AttendanceCheckout {
+  id               String           @id @default(uuid())
+  checkinId        String           @unique @map("checkin_id")
+  checkin          AttendanceCheckin @relation(fields: [checkinId], references: [id], onDelete: Cascade)
+  userId           String           @map("user_id")
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkOutTime     DateTime         @map("check_out_time")
+  latitude         Float
+  longitude        Float
+  distanceMeters   Float            @map("distance_meters")
+  isWithinGeofence Boolean          @map("is_within_geofence")
+
+  @@map("attendance_checkouts")
+}
+
+// ============================================
+// FEEDBACK KESEHATAN MENTAL (ANONIM — TIDAK ADA user_id)
+// ============================================
+
+model WellbeingFeedback {
+  id             String       @id @default(uuid())
+  // SENGAJA tidak menyimpan user_id — anonim mutlak
+  divisionId     String       @map("division_id")
+  division       Division     @relation(fields: [divisionId], references: [id])
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  submittedDate  DateTime     @map("submitted_date")
+  moodScore      Int          @map("mood_score") // 1-5
+  noteText       String?      @map("note_text") // Encrypted at-rest, processed AI then can be deleted
+  processed      Boolean      @default(false)
+
+  @@map("wellbeing_feedback")
+}
+
+// ============================================
+// AGREGAT INSIGHT DIVISI (DASHBOARD HR/OWNER — ANONIM)
+// ============================================
+
+model DivisionWellbeingInsight {
+  id              String   @id @default(uuid())
+  divisionId      String   @map("division_id")
+  division        Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  periodStart     DateTime @map("period_start")
+  periodEnd       DateTime @map("period_end")
+  avgMoodScore    Float    @map("avg_mood_score")
+  respondentCount Int      @map("respondent_count") // Only show to HR if >= 5
+  dominantThemes  String   @map("dominant_themes") // JSON string array
+  trendDirection  String   @map("trend_direction") // 'membaik', 'stabil', 'menurun'
+  riskLevel       String   @map("risk_level") // 'aman', 'perlu_perhatian', 'kritis'
+
+  @@map("division_wellbeing_insights")
+}
