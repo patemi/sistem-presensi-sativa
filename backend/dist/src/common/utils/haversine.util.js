@@ -22,7 +22,7 @@ function validateGeofence(userLat, userLon, officeLat, officeLon, radiusMeters) 
     const distance = calculateHaversineDistance(userLat, userLon, officeLat, officeLon);
     return {
         distance: Math.round(distance * 100) / 100,
-        isWithin: distance <= effectiveRadius,
+        isWithin: distance < effectiveRadius,
     };
 }
 //# sourceMappingURL=haversine.util.js.map

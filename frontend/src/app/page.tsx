@@ -15,7 +15,7 @@ export default function LandingPage() {
   const { t } = useTranslation();
 
   return (
-    <div className="relative min-h-screen flex flex-col justify-between overflow-hidden bg-slate-50 dark:bg-[#0b131d] text-slate-900 dark:text-white transition-colors duration-200">
+    <div className="relative min-h-screen flex flex-col justify-between overflow-x-hidden bg-slate-50 dark:bg-[#0b131d] text-slate-900 dark:text-white transition-colors duration-200">
       {/* Decorative background elements */}
       <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-sky-500/10 dark:bg-[rgba(160,212,228,0.15)] rounded-full blur-[130px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[700px] h-[700px] bg-teal-500/10 dark:bg-[rgba(31,62,83,0.5)] rounded-full blur-[150px] pointer-events-none" />

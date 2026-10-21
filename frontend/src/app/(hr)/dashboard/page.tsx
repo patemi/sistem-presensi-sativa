@@ -20,12 +20,13 @@ import {
   Droplets, User, UserPlus, FolderPlus, Mail, Send,
   Eye, EyeOff, X, Check, Building, Briefcase, FileSpreadsheet,
   LayoutDashboard, Settings, ChevronRight, Users, Shield, Menu,
-  Copy
+  Copy, CalendarCheck, FileText, MessageSquare
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, 
   YAxis, CartesianGrid, Tooltip, Legend 
 } from 'recharts';
+import AdminScheduleManagement from '@/components/schedule/AdminScheduleManagement';
 
 export default function HrDashboardPage() {
   return (
@@ -41,7 +42,7 @@ function HrDashboardContent() {
   const router = useRouter();
 
   // Sidebar navigation state
-  const [sidebarNav, setSidebarNav] = useState<'overview' | 'attendance' | 'psychological' | 'management'>('overview');
+  const [sidebarNav, setSidebarNav] = useState<'overview' | 'attendance' | 'psychological' | 'leaves' | 'management' | 'schedules'>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [attendanceData, setAttendanceData] = useState<any>(null);
@@ -149,6 +150,116 @@ function HrDashboardContent() {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
+  // Leave Requests (Izin & Cuti) State
+  const [leavesData, setLeavesData] = useState<{
+    stats: { total: number; pending: number; approved: number; rejected: number };
+    leaves: any[];
+  }>({
+    stats: { total: 0, pending: 0, approved: 0, rejected: 0 },
+    leaves: [],
+  });
+  const [leavesLoading, setLeavesLoading] = useState(false);
+  const [leaveStatusFilter, setLeaveStatusFilter] = useState<'all' | 'PENDING' | 'APPROVED' | 'REJECTED'>('all');
+  const [leaveDivisionFilter, setLeaveDivisionFilter] = useState<string>('all');
+  const [leaveSearchTerm, setLeaveSearchTerm] = useState('');
+
+  // Review Modal State (ACC / Tolak dengan Catatan Tambahan)
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [selectedLeaveForReview, setSelectedLeaveForReview] = useState<any>(null);
+  const [reviewAction, setReviewAction] = useState<'APPROVE' | 'REJECT'>('APPROVE');
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewSuccessAlert, setReviewSuccessAlert] = useState<string | null>(null);
+
+  // Modal Input Pengajuan Izin Baru oleh HR
+  const [createLeaveModalOpen, setCreateLeaveModalOpen] = useState(false);
+  const [newLeaveEmployeeId, setNewLeaveEmployeeId] = useState('');
+  const [newLeaveType, setNewLeaveType] = useState('cuti_tahunan');
+  const [newLeaveStartDate, setNewLeaveStartDate] = useState('');
+  const [newLeaveEndDate, setNewLeaveEndDate] = useState('');
+  const [newLeaveReason, setNewLeaveReason] = useState('');
+  const [newLeaveInitialStatus, setNewLeaveInitialStatus] = useState<'PENDING' | 'APPROVED'>('PENDING');
+  const [newLeaveAdminNotes, setNewLeaveAdminNotes] = useState('');
+  const [createLeaveLoading, setCreateLeaveLoading] = useState(false);
+
+  const fetchLeaves = async () => {
+    setLeavesLoading(true);
+    try {
+      const res = await api.get('/leaves');
+      setLeavesData(res.data);
+    } catch (err) {
+      console.error('Failed to load leave requests', err);
+    } finally {
+      setLeavesLoading(false);
+    }
+  };
+
+  const handleOpenReview = (leave: any, action: 'APPROVE' | 'REJECT') => {
+    setSelectedLeaveForReview(leave);
+    setReviewAction(action);
+    setReviewNotes(
+      leave.adminNotes || 
+      (action === 'APPROVE' 
+        ? 'Disetujui oleh HR. Jadwal shift klinik telah dikoordinasikan.' 
+        : 'Mohon maaf, permohonan belum dapat disetujui karena jadwal operasional padat.')
+    );
+    setReviewModalOpen(true);
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLeaveForReview) return;
+    setReviewLoading(true);
+    try {
+      const res = await api.patch(`/leaves/${selectedLeaveForReview.id}/review`, {
+        action: reviewAction,
+        adminNotes: reviewNotes,
+      });
+      setReviewSuccessAlert(res.data.message || 'Status izin/cuti berhasil diperbarui!');
+      setReviewModalOpen(false);
+      await fetchLeaves();
+      setTimeout(() => setReviewSuccessAlert(null), 6000);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Gagal memproses permohonan izin/cuti');
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  const handleCreateLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLeaveEmployeeId) {
+      alert('Pilih karyawan terlebih dahulu');
+      return;
+    }
+    if (!newLeaveStartDate || !newLeaveEndDate) {
+      alert('Pilih tanggal mulai dan tanggal selesai');
+      return;
+    }
+    setCreateLeaveLoading(true);
+    try {
+      await api.post('/leaves', {
+        employeeId: newLeaveEmployeeId,
+        leaveType: newLeaveType,
+        startDate: newLeaveStartDate,
+        endDate: newLeaveEndDate,
+        reason: newLeaveReason,
+        initialStatus: newLeaveInitialStatus,
+        adminNotes: newLeaveAdminNotes,
+      });
+      setReviewSuccessAlert('Pengajuan izin/cuti baru berhasil dicatat!');
+      setCreateLeaveModalOpen(false);
+      setNewLeaveReason('');
+      setNewLeaveAdminNotes('');
+      await fetchLeaves();
+      setTimeout(() => setReviewSuccessAlert(null), 6000);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Gagal membuat permohonan izin/cuti');
+    } finally {
+      setCreateLeaveLoading(false);
+    }
+  };
+
   const fetchDashboardData = async (division = selectedDivision) => {
     setLoading(true);
     try {
@@ -194,6 +305,7 @@ function HrDashboardContent() {
   useEffect(() => {
     fetchDivisions();
     fetchEmployees();
+    fetchLeaves();
   }, []);
 
   const handleTriggerCron = async () => {
@@ -354,6 +466,48 @@ function HrDashboardContent() {
     return matchesStatus && matchesDivision && matchesSearch;
   });
 
+  const formatDateOnly = (dateString?: string | null) => {
+    if (!dateString) return '-';
+    try {
+      const d = new Date(dateString);
+      return d.toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return '-';
+    }
+  };
+
+  const getLeaveTypeInfo = (type: string) => {
+    switch (type) {
+      case 'cuti_tahunan':
+        return { label: 'Cuti Tahunan', color: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' };
+      case 'izin_sakit':
+        return { label: 'Izin Sakit', color: 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' };
+      case 'izin_keperluan_pribadi':
+        return { label: 'Keperluan Pribadi', color: 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' };
+      case 'cuti_melahirkan':
+        return { label: 'Cuti Melahirkan', color: 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' };
+      default:
+        return { label: 'Izin Khusus / Lainnya', color: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700' };
+    }
+  };
+
+  const filteredLeavesList = (leavesData?.leaves || []).filter((leave: any) => {
+    const matchesStatus = leaveStatusFilter === 'all' || leave.status === leaveStatusFilter;
+    const matchesDivision = leaveDivisionFilter === 'all' || leave.user?.divisionId === leaveDivisionFilter;
+    const query = leaveSearchTerm.toLowerCase().trim();
+    const matchesSearch = !query ||
+      leave.user?.fullName?.toLowerCase().includes(query) ||
+      leave.user?.email?.toLowerCase().includes(query) ||
+      leave.reason?.toLowerCase().includes(query) ||
+      leave.leaveType?.toLowerCase().includes(query) ||
+      leave.adminNotes?.toLowerCase().includes(query);
+    return matchesStatus && matchesDivision && matchesSearch;
+  });
+
   const getChartData = () => {
     if (!sentimentTrends || sentimentTrends.length === 0) return [];
     const trend = sentimentTrends[0];
@@ -377,36 +531,219 @@ function HrDashboardContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0b131d] text-slate-900 dark:text-slate-100 flex flex-col md:flex-row font-sans transition-colors duration-200">
-      {/* MOBILE NAVBAR */}
-      <div className="md:hidden flex items-center justify-between p-4 bg-white dark:bg-[#0f1823] border-b border-slate-200 dark:border-slate-800 sticky top-0 z-50">
+      {/* MOBILE TOP NAVBAR */}
+      <div className="md:hidden flex items-center justify-between px-4 py-3 bg-white dark:bg-[#0f1823] border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 backdrop-blur-md">
         <div className="flex items-center space-x-2.5">
-          <div className="h-8 w-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-500">
-            <Droplets className="h-4 w-4" />
+          <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+            <Droplets className="h-4.5 w-4.5" />
           </div>
-          <span className="font-bold text-sm tracking-wider text-slate-900 dark:text-white">SATIVA HR</span>
+          <div>
+            <span className="font-extrabold text-sm tracking-wide text-slate-900 dark:text-white block leading-none">SATIVA HR</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">Portal Manajemen Klinik</span>
+          </div>
         </div>
 
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
-        >
-          {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
+            aria-label="Buka Menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
-      {/* CLEAN SAAS SIDEBAR */}
-      <aside className={cn(
-        "w-full md:w-64 bg-white dark:bg-[#0c141d] border-r border-slate-200 dark:border-slate-800/80 flex flex-col justify-between p-4 z-40 shrink-0 sticky top-0 md:h-screen transition-all duration-200 shadow-sm md:shadow-none",
-        mobileMenuOpen ? "block" : "hidden md:flex"
-      )}>
+      {/* MOBILE SLIDE-OVER DRAWER (Responsive & Smooth) */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <div className="md:hidden fixed inset-0 z-50 flex">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+
+            {/* Drawer Content */}
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="relative w-72 max-w-[85vw] bg-white dark:bg-[#0c141d] h-full shadow-2xl flex flex-col justify-between p-5 z-50 overflow-y-auto border-r border-slate-200 dark:border-slate-800"
+            >
+              <div>
+                {/* Drawer Header */}
+                <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+                      <Droplets className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-base text-slate-900 dark:text-white block leading-none">SATIVA</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">Klinik Kecantikan HR</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Menu Utama</div>
+                <nav className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => { setSidebarNav('overview'); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                      sidebarNav === 'overview'
+                        ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                    )}
+                  >
+                    <BarChart3 className={cn("h-4 w-4 shrink-0", sidebarNav === 'overview' ? "text-sky-500" : "text-slate-400")} />
+                    <span>Overview Ringkasan</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSidebarNav('attendance'); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                      sidebarNav === 'attendance'
+                        ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                    )}
+                  >
+                    <Calendar className={cn("h-4 w-4 shrink-0", sidebarNav === 'attendance' ? "text-sky-500" : "text-slate-400")} />
+                    <span>Absensi Kehadiran</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSidebarNav('psychological'); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                      sidebarNav === 'psychological'
+                        ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                    )}
+                  >
+                    <Sparkles className={cn("h-4 w-4 shrink-0", sidebarNav === 'psychological' ? "text-sky-500" : "text-slate-400")} />
+                    <span>Psikologis & Sentimen</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSidebarNav('leaves'); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                      sidebarNav === 'leaves'
+                        ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <CalendarCheck className={cn("h-4 w-4 shrink-0", sidebarNav === 'leaves' ? "text-sky-500" : "text-slate-400")} />
+                      <span>Izin & Cuti Karyawan</span>
+                    </div>
+                    {leavesData.stats.pending > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse shadow-sm">
+                        {leavesData.stats.pending}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSidebarNav('schedules'); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                      sidebarNav === 'schedules'
+                        ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                    )}
+                  >
+                    <Calendar className={cn("h-4 w-4 shrink-0", sidebarNav === 'schedules' ? "text-sky-500" : "text-slate-400")} />
+                    <span>Jadwal & Tukar Shift</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSidebarNav('management'); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                      sidebarNav === 'management'
+                        ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                    )}
+                  >
+                    <Building className={cn("h-4 w-4 shrink-0", sidebarNav === 'management' ? "text-sky-500" : "text-slate-400")} />
+                    <span>Manajemen Organisasi</span>
+                  </button>
+
+                  <Link
+                    href="/dashboard/history"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 transition-colors mt-3"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-500" />
+                    <span>Log Riwayat & Ekspor</span>
+                  </Link>
+                </nav>
+              </div>
+
+              {/* Mobile Drawer Footer User Card */}
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-sky-100 dark:bg-sky-950/80 border border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 font-bold text-xs flex items-center justify-center shrink-0">
+                    {user?.fullName?.substring(0, 2).toUpperCase() || 'HR'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{user?.fullName}</p>
+                    <span className="text-[10px] font-semibold text-sky-600 dark:text-sky-400">Superadmin HR</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <ThemeToggle />
+                    <SwitchLanguage />
+                  </div>
+                  <button
+                    onClick={logout}
+                    className="p-2 px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-100 text-xs font-semibold flex items-center gap-1.5"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Keluar</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DESKTOP SAAS SIDEBAR (Always clean on desktop) */}
+      <aside className="hidden md:flex w-64 bg-white dark:bg-[#0c141d] border-r border-slate-200 dark:border-slate-800/80 flex-col justify-between p-4 z-30 shrink-0 sticky top-0 h-screen transition-all shadow-sm">
         <div>
           {/* Brand Header */}
-          <div className="hidden md:flex items-center space-x-3 pb-5 border-b border-slate-200 dark:border-slate-800/80 mb-5 px-2">
-            <div className="h-9 w-9 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-500 shadow-sm">
-              <Droplets className="h-4.5 w-4.5" />
+          <div className="flex items-center space-x-3 pb-5 border-b border-slate-200 dark:border-slate-800/80 mb-5 px-2">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+              <Droplets className="h-5 w-5" />
             </div>
             <div>
-              <span className="font-bold text-base tracking-tight text-slate-900 dark:text-white block leading-none">
+              <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white block leading-none">
                 SATIVA
               </span>
               <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block mt-1">
@@ -421,9 +758,9 @@ function HrDashboardContent() {
           </div>
           <nav className="space-y-1">
             <button
-              onClick={() => { setSidebarNav('overview'); setMobileMenuOpen(false); }}
+              onClick={() => setSidebarNav('overview')}
               className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150 cursor-pointer",
                 sidebarNav === 'overview'
                   ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
                   : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50 border border-transparent"
@@ -434,9 +771,9 @@ function HrDashboardContent() {
             </button>
 
             <button
-              onClick={() => { setSidebarNav('attendance'); setMobileMenuOpen(false); }}
+              onClick={() => setSidebarNav('attendance')}
               className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150 cursor-pointer",
                 sidebarNav === 'attendance'
                   ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
                   : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50 border border-transparent"
@@ -447,9 +784,9 @@ function HrDashboardContent() {
             </button>
 
             <button
-              onClick={() => { setSidebarNav('psychological'); setMobileMenuOpen(false); }}
+              onClick={() => setSidebarNav('psychological')}
               className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150 cursor-pointer",
                 sidebarNav === 'psychological'
                   ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
                   : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50 border border-transparent"
@@ -460,9 +797,44 @@ function HrDashboardContent() {
             </button>
 
             <button
-              onClick={() => { setSidebarNav('management'); setMobileMenuOpen(false); }}
+              onClick={() => setSidebarNav('leaves')}
               className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150 cursor-pointer",
+                sidebarNav === 'leaves'
+                  ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50 border border-transparent"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <CalendarCheck className={cn("h-4 w-4 shrink-0", sidebarNav === 'leaves' ? "text-sky-500" : "text-slate-400")} />
+                <span>Izin & Cuti Karyawan</span>
+              </div>
+              {leavesData.stats.pending > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse shadow-sm">
+                  {leavesData.stats.pending}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setSidebarNav('schedules')}
+              className={cn(
+                "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150 cursor-pointer",
+                sidebarNav === 'schedules'
+                  ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50 border border-transparent"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <Calendar className={cn("h-4 w-4 shrink-0", sidebarNav === 'schedules' ? "text-sky-500" : "text-slate-400")} />
+                <span>Jadwal & Tukar Shift</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setSidebarNav('management')}
+              className={cn(
+                "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150 cursor-pointer",
                 sidebarNav === 'management'
                   ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
                   : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50 border border-transparent"
@@ -509,7 +881,7 @@ function HrDashboardContent() {
             </div>
             <button
               onClick={logout}
-              className="p-2 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/70 transition-colors text-xs font-semibold flex items-center gap-1.5"
+              className="p-2 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/70 transition-colors text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
               title="Keluar"
             >
               <LogOut className="h-4 w-4" />
@@ -522,29 +894,31 @@ function HrDashboardContent() {
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header Bar */}
-        <header className="bg-white dark:bg-[#0e1622] border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-30 transition-colors duration-200 shadow-sm md:shadow-none">
+        <header className="bg-white dark:bg-[#0e1622] border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sticky top-0 z-20 transition-colors duration-200 shadow-sm md:shadow-none">
           <div>
-            <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
               {sidebarNav === 'overview' && 'Overview Evaluasi Klinik'}
               {sidebarNav === 'attendance' && 'Absensi & Kehadiran Karyawan'}
               {sidebarNav === 'psychological' && 'Iklim Psikologis & Sentimen Tim'}
+              {sidebarNav === 'leaves' && 'Manajemen Izin & Cuti Karyawan'}
+              {sidebarNav === 'schedules' && 'Manajemen Jadwal Shift & Tukar Shift'}
               {sidebarNav === 'management' && 'Pusat Manajemen HR & Klinik'}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {sidebarNav === 'overview' && 'Analisis korelasi absensi tim dan tren iklim mental kolektif real-time.'}
               {sidebarNav === 'attendance' && 'Log kehadiran harian karyawan terdaftar beserta status absensi.'}
               {sidebarNav === 'psychological' && 'Data tren kesehatan mental kolektif terenkripsi & anonim.'}
+              {sidebarNav === 'leaves' && 'Verifikasi permohonan izin cuti staf klinik, berikan persetujuan (ACC) atau penolakan beserta catatan admin.'}
+              {sidebarNav === 'schedules' && 'Setup jadwal operasional klinik (PAGI 08:30-17:00 / SIANG 10:30-19:00) dan ACC tukar shift.'}
               {sidebarNav === 'management' && 'Kelola profil HR, tambah admin, tambah divisi, dan undang karyawan via email.'}
             </p>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <ThemeToggle />
-
+          <div className="flex items-center gap-2.5 flex-wrap">
             {/* Division Filter Dropdown */}
-            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 rounded-xl px-3 py-1.5">
-              <Building className="h-3.5 w-3.5 text-sky-500" />
-              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">Divisi:</span>
+            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 rounded-xl px-3 py-1.5 text-xs">
+              <Building className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+              <span className="text-slate-500 dark:text-slate-400 font-medium hidden sm:inline">Divisi:</span>
               <select
                 value={selectedDivision}
                 onChange={(e) => setSelectedDivision(e.target.value)}
@@ -559,27 +933,28 @@ function HrDashboardContent() {
               </select>
             </div>
 
-            {/* Run Aggregator Button */}
+            {/* Tombol Perbarui Analisis AI (Ramah orang awam) */}
             <button
               onClick={handleTriggerCron}
               disabled={cronTriggering}
-              className="saas-button-primary px-3.5 py-1.5 text-xs font-semibold flex items-center gap-2 disabled:opacity-50"
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-semibold flex items-center gap-2 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
+              title="Perbarui analisis korelasi absensi dan tren stres tim klinik"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${cronTriggering ? 'animate-spin' : ''}`} />
-              <span>{cronTriggering ? 'Mengagregasikan...' : 'Run Aggregator'}</span>
+              <Sparkles className={`h-3.5 w-3.5 ${cronTriggering ? 'animate-spin' : ''}`} />
+              <span>{cronTriggering ? 'Menganalisis...' : 'Perbarui Analisis AI'}</span>
             </button>
           </div>
         </header>
 
         {/* Dynamic Section Content */}
-        <main className="p-6 flex-1 space-y-6 max-w-7xl w-full mx-auto">
+        <main className="p-4 sm:p-6 flex-1 space-y-6 max-w-7xl w-full mx-auto">
           {/* Cron Trigger Notification */}
           {cronResult && (
-            <div className="flex items-start gap-3 p-4 rounded-xl bg-sky-50 dark:bg-slate-900 border border-sky-200 dark:border-sky-500/30 text-slate-800 dark:text-white text-xs font-medium shadow-sm">
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-sky-50 dark:bg-slate-900 border border-sky-200 dark:border-sky-500/30 text-slate-800 dark:text-white text-xs font-medium shadow-sm">
               <Sparkles className="h-4 w-4 text-sky-500 dark:text-sky-400 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-sky-800 dark:text-sky-300">Agregasi Data Sentimen Tim Selesai</p>
-                <p className="text-slate-600 dark:text-[#94a3b8] text-xs mt-1 leading-relaxed">
+                <p className="font-semibold text-sky-800 dark:text-sky-300">Analisis Iklim Tim Klinik Selesai</p>
+                <p className="text-slate-600 dark:text-slate-400 text-xs mt-1 leading-relaxed">
                   Proses selesai: {cronResult.processedTeams || cronResult.processedDivisions} divisi dianalisis, {cronResult.aggregatedTeams || cronResult.aggregatedDivisions} divisi teragregasi (&gt;= 5 responden), {cronResult.skippedTeams || cronResult.skippedDivisions} divisi dilewati (&lt; 5 responden).
                 </p>
               </div>
@@ -588,9 +963,9 @@ function HrDashboardContent() {
 
           {loading ? (
             /* Loading Skeleton */
-            <div className="h-96 flex flex-col items-center justify-center saas-card">
+            <div className="h-96 flex flex-col items-center justify-center bg-white dark:bg-[#111c27] rounded-3xl border border-slate-200 dark:border-slate-800">
               <div className="h-8 w-8 border-2 border-slate-300 dark:border-slate-700 border-t-sky-500 dark:border-t-sky-400 rounded-full animate-spin mb-3" />
-              <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Memuat data analitik...</p>
+              <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Memuat data analitik klinik...</p>
             </div>
           ) : (
             <AnimatePresence mode="wait">
@@ -604,60 +979,66 @@ function HrDashboardContent() {
                   transition={{ duration: 0.2 }}
                   className="space-y-6"
                 >
-                  {/* KPI Stat Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {/* KPI Stat Cards (Responsive Grid 1 to 3 cols with fallback numbers) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
                     {/* Attendance Rate Card */}
-                    <div className="saas-card p-5 relative overflow-hidden">
+                    <div className="p-5 rounded-2xl bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          {t('hr.attendance_rate')}
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          Tingkat Kehadiran Harian
                         </span>
-                        <Calendar className="h-5 w-5 text-sky-500 dark:text-sky-400 opacity-80" />
+                        <div className="p-2 rounded-xl bg-sky-50 dark:bg-sky-950/80 text-sky-600 dark:text-sky-400">
+                          <Calendar className="h-4 w-4" />
+                        </div>
                       </div>
-                      <div className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-                        {attendanceData?.summary.attendanceRate}%
+                      <div className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                        {attendanceData?.summary?.attendanceRate !== undefined ? `${attendanceData.summary.attendanceRate}%` : '0%'}
                       </div>
-                      <div className="flex items-center gap-2 mt-4 text-xs font-medium">
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
-                          {attendanceData?.summary.presentCount} {t('hr.present_today')}
+                      <div className="flex items-center gap-2 mt-4 text-xs font-medium flex-wrap">
+                        <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 font-semibold">
+                          {attendanceData?.summary?.presentCount ?? 0} Hadir Hari Ini
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-red-50 dark:bg-red-950/80 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/60">
-                          {attendanceData?.summary.absentCount} {t('hr.not_present_today')}
+                        <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 font-semibold">
+                          {attendanceData?.summary?.absentCount ?? 0} Belum Absen
                         </span>
                       </div>
                     </div>
 
                     {/* Late Rate Card */}
-                    <div className="saas-card p-5 relative overflow-hidden">
+                    <div className="p-5 rounded-2xl bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          {t('hr.late_rate')}
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          Tingkat Keterlambatan
                         </span>
-                        <Clock className="h-5 w-5 text-amber-500 dark:text-amber-400 opacity-80" />
+                        <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400">
+                          <Clock className="h-4 w-4" />
+                        </div>
                       </div>
-                      <div className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-                        {attendanceData?.summary.lateRate}%
+                      <div className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                        {attendanceData?.summary?.lateRate !== undefined ? `${attendanceData.summary.lateRate}%` : '0%'}
                       </div>
                       <p className="text-slate-500 dark:text-slate-400 text-xs mt-4 font-medium">
-                        Terlambat masuk: <span className="text-amber-600 dark:text-amber-300 font-bold">{attendanceData?.summary.lateCount} orang</span>
+                        Terlambat masuk: <span className="text-amber-600 dark:text-amber-400 font-bold">{attendanceData?.summary?.lateCount ?? 0} orang</span>
                       </p>
                     </div>
 
                     {/* Burnout Risk Card */}
-                    <div className="saas-card p-5 relative overflow-hidden">
+                    <div className="p-5 rounded-2xl bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden sm:col-span-2 lg:col-span-1">
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          {t('hr.burnout_alert')}
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          Peringatan Stres / Burnout
                         </span>
-                        <AlertTriangle className="h-5 w-5 text-red-500 dark:text-red-400 opacity-80" />
+                        <div className={`p-2 rounded-xl ${alerts.length > 0 ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400' : 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400'}`}>
+                          <AlertTriangle className="h-4 w-4" />
+                        </div>
                       </div>
-                      <div className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+                      <div className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                         {alerts.length}
                       </div>
                       <div className="mt-4">
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border inline-block ${
                           alerts.length > 0
-                            ? 'bg-red-50 dark:bg-red-950/80 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800/60'
+                            ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60'
                             : 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
                         }`}>
                           {alerts.length > 0 ? 'Perlu Intervensi HR' : 'Kondisi Optimal'}
@@ -707,7 +1088,51 @@ function HrDashboardContent() {
                       </span>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    {/* Tampilan Mobile: Kartu Hadir Tanpa Geser */}
+                    <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/60">
+                      {filteredPresentList.length === 0 ? (
+                        <p className="py-6 text-center text-slate-400 dark:text-slate-500 font-medium text-xs">
+                          Tidak ada data karyawan hadir
+                        </p>
+                      ) : (
+                        filteredPresentList.map((row: any) => (
+                          <div key={`m-present-${row.id}`} className="py-3.5 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-xs">{row.fullName}</h4>
+                                <span className="inline-block mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                                  {row.divisionName}
+                                </span>
+                              </div>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border shrink-0 ${
+                                row.lateMinutes > 0
+                                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                                  : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
+                              }`}>
+                                {row.lateMinutes > 0 ? `Terlambat (${row.lateMinutes}m)` : 'Tepat Waktu'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                              <div>
+                                <span className="text-[10px] text-slate-400 block font-medium">Check-in</span>
+                                <span className="font-mono font-bold">{row.checkInTime ? new Date(row.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block font-medium">Check-out</span>
+                                <span className="font-mono font-bold">{row.checkoutTime ? new Date(row.checkoutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block font-medium">Jarak GPS</span>
+                                <span className="font-mono font-bold">{row.distanceMeters}m</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Tampilan Desktop: Tabel Lengkap */}
+                    <div className="hidden md:block overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead>
                           <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold text-[11px]">
@@ -763,7 +1188,29 @@ function HrDashboardContent() {
                       </span>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    {/* Tampilan Mobile: Kartu Belum Hadir */}
+                    <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/60">
+                      {filteredAbsentList.length === 0 ? (
+                        <p className="py-6 text-center text-slate-400 dark:text-slate-500 font-medium text-xs">
+                          Semua karyawan sudah absen hari ini
+                        </p>
+                      ) : (
+                        filteredAbsentList.map((row: any) => (
+                          <div key={`m-absent-${row.id}`} className="py-3 flex items-center justify-between">
+                            <div>
+                              <h4 className="font-bold text-slate-900 dark:text-white text-xs">{row.fullName}</h4>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">{row.divisionName}</p>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/60">
+                              Belum Absen
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Tampilan Desktop: Tabel */}
+                    <div className="hidden md:block overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead>
                           <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold text-[11px]">
@@ -820,7 +1267,80 @@ function HrDashboardContent() {
                       </p>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    {/* Tampilan Mobile: Kartu Iklim Psikologis Divisi Tanpa Geser */}
+                    <div className="md:hidden space-y-3">
+                      {correlationData.length === 0 ? (
+                        <p className="py-6 text-center text-slate-400 dark:text-slate-500 font-medium text-xs">
+                          Tidak ada data analisis divisi
+                        </p>
+                      ) : (
+                        correlationData.map((row: any) => (
+                          <div
+                            key={`m-corr-${row.divisionId}`}
+                            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                {row.divisionName}
+                              </h4>
+                              <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                                row.riskLevel === 'kritis'
+                                  ? 'bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800/60'
+                                  : row.riskLevel === 'perlu_perhatian'
+                                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                                  : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
+                              }`}>
+                                {row.riskLevel}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 text-xs bg-slate-50 dark:bg-slate-950/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                              <div>
+                                <span className="text-[10px] text-slate-400 block font-medium">Kehadiran</span>
+                                <span className="font-mono font-bold text-sky-600 dark:text-sky-400">{row.attendanceRate}%</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block font-medium">Keterlambatan</span>
+                                <span className="font-mono font-bold text-slate-700 dark:text-slate-200">{row.lateCount} kali</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block font-medium">Sentimen</span>
+                                {row.isRestricted ? (
+                                  <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-slate-500">
+                                    <Lock className="h-2.5 w-2.5" />
+                                    Terkunci
+                                  </span>
+                                ) : (
+                                  <span className="font-mono font-bold text-slate-800 dark:text-white">
+                                    {row.avgSentimentScore}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div>
+                              <p className="text-[10px] text-slate-400 uppercase font-semibold mb-1">Tema Utama</p>
+                              {row.isRestricted ? (
+                                <span className="text-slate-400 italic text-xs">{t('hr.insufficient_data')}</span>
+                              ) : row.dominantThemes && row.dominantThemes.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {row.dominantThemes.map((tTheme: string, idx: number) => (
+                                    <span key={idx} className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                      {tTheme}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 text-xs italic">Belum ada tema jurnal</span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Tampilan Desktop: Tabel Lengkap */}
+                    <div className="hidden md:block overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead>
                           <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold text-[11px]">
@@ -1328,12 +1848,12 @@ function HrDashboardContent() {
                       </div>
 
                       {/* Divisi & Pencarian Input */}
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
                         {/* Filter Divisi */}
                         <select
                           value={employeeDivisionFilter}
                           onChange={(e) => setEmployeeDivisionFilter(e.target.value)}
-                          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white text-xs rounded-xl px-3 py-2 outline-none"
+                          className="w-full sm:w-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white text-xs rounded-xl px-3 py-2 outline-none"
                         >
                           <option value="all">Semua Divisi</option>
                           {divisionsList.map((d) => (
@@ -1344,7 +1864,7 @@ function HrDashboardContent() {
                         </select>
 
                         {/* Search Input */}
-                        <div className="relative min-w-[200px] sm:min-w-[240px]">
+                        <div className="relative w-full sm:w-64">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                           <input
                             type="text"
@@ -1365,9 +1885,178 @@ function HrDashboardContent() {
                       </div>
                     </div>
 
-                    {/* Tabel Karyawan */}
+                    {/* Tabel Karyawan & Tampilan Kartu Mobile */}
                     <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-                      <div className="overflow-x-auto">
+                      {/* Tampilan Mobile: Kartu Responsif Tanpa Perlu Digeser */}
+                      <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-950/40">
+                        {employeesLoading ? (
+                          <div className="py-10 text-center text-slate-500">
+                            <RefreshCw className="h-5 w-5 animate-spin text-indigo-500 mx-auto mb-2" />
+                            <p className="text-xs">Memuat data seluruh karyawan...</p>
+                          </div>
+                        ) : filteredEmployeesList.length === 0 ? (
+                          <div className="py-10 px-4 text-center text-slate-500">
+                            <Users className="h-8 w-8 text-slate-400 mx-auto mb-2 stroke-[1.5]" />
+                            <p className="font-semibold text-slate-700 dark:text-slate-300 text-xs">Tidak ada data karyawan yang cocok</p>
+                            <p className="text-[11px] text-slate-500 mt-1">Coba ubah filter status atau kata kunci pencarian Anda.</p>
+                            {(employeeStatusFilter !== 'all' || employeeDivisionFilter !== 'all' || employeeSearchTerm) && (
+                              <button
+                                onClick={() => {
+                                  setEmployeeStatusFilter('all');
+                                  setEmployeeDivisionFilter('all');
+                                  setEmployeeSearchTerm('');
+                                }}
+                                className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                              >
+                                Reset Semua Filter
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          filteredEmployeesList.map((emp: any) => {
+                            const isJoined = emp.inviteStatus === 'joined';
+                            const isSent = emp.inviteStatus === 'sent';
+                            const isPending = emp.inviteStatus === 'pending' || !emp.inviteStatus;
+
+                            return (
+                              <div key={`m-emp-${emp.id}`} className="p-4 space-y-3">
+                                {/* Header Kartu: Avatar + Nama + Status Badge */}
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-3">
+                                    <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
+                                      {emp.fullName?.charAt(0)?.toUpperCase() || 'U'}
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-bold text-slate-900 dark:text-white text-sm">
+                                          {emp.fullName}
+                                        </span>
+                                        {emp.role === 'hr' && (
+                                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                            HR Admin
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                                        {emp.email}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* Status Badge */}
+                                  <div className="shrink-0">
+                                    {isJoined && (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        Aktif
+                                      </span>
+                                    )}
+                                    {isSent && (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                        Menunggu Login
+                                      </span>
+                                    )}
+                                    {isPending && (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
+                                        <Clock className="h-3 w-3 text-slate-500" />
+                                        Belum Terkirim
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Informasi Detail: Divisi & Kode Undangan */}
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800">
+                                    <p className="text-[10px] text-slate-400 uppercase font-semibold mb-1">Divisi</p>
+                                    <div className="flex items-center gap-1 font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                                      <Building className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                                      <span className="truncate">{emp.divisionName || emp.division?.name || 'Tanpa Divisi'}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800">
+                                    <p className="text-[10px] text-slate-400 uppercase font-semibold mb-1">Kode Undangan</p>
+                                    {emp.inviteCode ? (
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="font-mono text-xs font-bold text-indigo-600 dark:text-sky-300 truncate">
+                                          {emp.inviteCode}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => copyToClipboard(emp.inviteCode)}
+                                          className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors shrink-0"
+                                          title="Salin Kode Undangan"
+                                        >
+                                          {copiedCode === emp.inviteCode ? (
+                                            <Check className="h-3.5 w-3.5 text-emerald-500" />
+                                          ) : (
+                                            <Copy className="h-3.5 w-3.5" />
+                                          )}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-400 italic text-xs">-</span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Footer Kartu: Tanggal Terakhir & Tombol Aksi */}
+                                <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    {isJoined
+                                      ? `Login terakhir: ${emp.lastLoginAt ? formatDateTime(emp.lastLoginAt) : 'Belum pernah'}`
+                                      : isSent
+                                      ? `Undangan dikirim: ${emp.invitedAt ? formatDateTime(emp.invitedAt) : formatDateTime(emp.createdAt)}`
+                                      : `Akun dibuat: ${formatDateTime(emp.createdAt)}`
+                                    }
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    disabled={resendingId === emp.id}
+                                    onClick={() => handleResendInvite(emp.id, emp.fullName)}
+                                    className={cn(
+                                      "w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-sm transition-all",
+                                      isPending
+                                        ? "bg-indigo-600 hover:bg-indigo-500 text-white"
+                                        : isSent
+                                        ? "bg-amber-100 hover:bg-amber-200 dark:bg-amber-950 dark:hover:bg-amber-900 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800"
+                                        : "saas-button text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                                    )}
+                                  >
+                                    {resendingId === emp.id ? (
+                                      <>
+                                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                        <span>Mengirim...</span>
+                                      </>
+                                    ) : isPending ? (
+                                      <>
+                                        <Send className="h-3.5 w-3.5" />
+                                        <span>Kirim Undangan Email</span>
+                                      </>
+                                    ) : isSent ? (
+                                      <>
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                        <span>Kirim Ulang Undangan</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Mail className="h-3.5 w-3.5" />
+                                        <span>Kirim Ulang Kode</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Tampilan Desktop: Tabel Lengkap */}
+                      <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-left text-xs">
                           <thead>
                             <tr className="bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-semibold">
@@ -1610,7 +2299,645 @@ function HrDashboardContent() {
                   </div>
                 </motion.div>
               )}
+
+              {/* SECTION 5: MANAJEMEN PENGAJUAN IZIN & CUTI KARYAWAN */}
+              {sidebarNav === 'leaves' && (
+                <motion.div
+                  key="leaves"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-6"
+                >
+                  {/* Alert Banner Notifikasi Sukses Review */}
+                  {reviewSuccessAlert && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 flex items-center justify-between gap-3 shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                          <CheckCircle2 className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold">Pembaruan Berhasil Disimpan</p>
+                          <p className="text-xs mt-0.5 opacity-90">{reviewSuccessAlert}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setReviewSuccessAlert(null)}
+                        className="p-1 rounded-lg hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </motion.div>
+                  )}
+
+                  {/* 4 Kartu Metrik KPI Izin & Cuti */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* KPI 1: Total Pengajuan */}
+                    <div className="saas-card p-5 relative overflow-hidden group hover:border-sky-300 dark:hover:border-sky-700/60 transition-all">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          Total Permohonan
+                        </span>
+                        <div className="h-8 w-8 rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center border border-sky-200 dark:border-sky-800">
+                          <CalendarCheck className="h-4 w-4" />
+                        </div>
+                      </div>
+                      <div className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+                        {leavesData.stats.total}
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 font-medium">
+                        Akumulasi seluruh permohonan cuti
+                      </p>
+                    </div>
+
+                    {/* KPI 2: Menunggu Persetujuan */}
+                    <div className="saas-card p-5 relative overflow-hidden group hover:border-amber-300 dark:hover:border-amber-700/60 transition-all">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider font-bold">
+                          Menunggu ACC
+                        </span>
+                        <div className="h-8 w-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-200 dark:border-amber-800">
+                          <Clock className="h-4 w-4" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold text-amber-600 dark:text-amber-400 tracking-tight">
+                          {leavesData.stats.pending}
+                        </span>
+                        {leavesData.stats.pending > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+                            Perlu Tindakan
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 font-medium">
+                        Menunggu review & persetujuan HR
+                      </p>
+                    </div>
+
+                    {/* KPI 3: Disetujui */}
+                    <div className="saas-card p-5 relative overflow-hidden group hover:border-emerald-300 dark:hover:border-emerald-700/60 transition-all">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-bold">
+                          Disetujui (ACC)
+                        </span>
+                        <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </div>
+                      </div>
+                      <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 tracking-tight">
+                        {leavesData.stats.approved}
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 font-medium">
+                        Izin disetujui & shift disesuaikan
+                      </p>
+                    </div>
+
+                    {/* KPI 4: Ditolak */}
+                    <div className="saas-card p-5 relative overflow-hidden group hover:border-rose-300 dark:hover:border-rose-700/60 transition-all">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wider font-bold">
+                          Ditolak
+                        </span>
+                        <div className="h-8 w-8 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center border border-rose-200 dark:border-rose-800">
+                          <XCircle className="h-4 w-4" />
+                        </div>
+                      </div>
+                      <div className="text-3xl font-bold text-rose-600 dark:text-rose-400 tracking-tight">
+                        {leavesData.stats.rejected}
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 font-medium">
+                        Permohonan tidak dapat di-ACC
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Panel Utama Tabel Izin & Cuti */}
+                  <div className="saas-card overflow-hidden">
+                    {/* Header Panel */}
+                    <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                            <CalendarCheck className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                              Manajemen Pengajuan Izin & Cuti Karyawan
+                            </h2>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Tinjau, ACC persetujuan, atau tolak permohonan izin karyawan klinik dengan catatan resmi HR.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={fetchLeaves}
+                          disabled={leavesLoading}
+                          className="saas-button px-3.5 py-2 text-xs font-semibold inline-flex items-center gap-2 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                          title="Segarkan data permohonan izin"
+                        >
+                          <RefreshCw className={cn("h-3.5 w-3.5", leavesLoading && "animate-spin text-sky-500")} />
+                          <span>Segarkan</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (employeesData.employees.length > 0 && !newLeaveEmployeeId) {
+                              setNewLeaveEmployeeId(employeesData.employees[0].id);
+                            }
+                            setCreateLeaveModalOpen(true);
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-semibold shadow-md inline-flex items-center gap-2 transition-all"
+                        >
+                          <FolderPlus className="h-4 w-4" />
+                          <span>+ Buat Pengajuan Cuti</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Filter & Search Bar */}
+                    <div className="p-4 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                      {/* Status Filter Tabs */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+                        <button
+                          type="button"
+                          onClick={() => setLeaveStatusFilter('all')}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors",
+                            leaveStatusFilter === 'all'
+                              ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm"
+                              : "bg-white dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                          )}
+                        >
+                          Semua ({leavesData.stats.total})
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setLeaveStatusFilter('PENDING')}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5",
+                            leaveStatusFilter === 'PENDING'
+                              ? "bg-amber-500 text-white shadow-sm"
+                              : "bg-white dark:bg-slate-800/80 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-slate-800 border border-amber-200 dark:border-amber-800/60"
+                          )}
+                        >
+                          <Clock className="h-3 w-3" />
+                          <span>Menunggu ACC ({leavesData.stats.pending})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setLeaveStatusFilter('APPROVED')}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5",
+                            leaveStatusFilter === 'APPROVED'
+                              ? "bg-emerald-600 text-white shadow-sm"
+                              : "bg-white dark:bg-slate-800/80 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 border border-emerald-200 dark:border-emerald-800/60"
+                          )}
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>Disetujui ({leavesData.stats.approved})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setLeaveStatusFilter('REJECTED')}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5",
+                            leaveStatusFilter === 'REJECTED'
+                              ? "bg-rose-600 text-white shadow-sm"
+                              : "bg-white dark:bg-slate-800/80 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-slate-800 border border-rose-200 dark:border-rose-800/60"
+                          )}
+                        >
+                          <XCircle className="h-3 w-3" />
+                          <span>Ditolak ({leavesData.stats.rejected})</span>
+                        </button>
+                      </div>
+
+                      {/* Division Filter & Search Input */}
+                      <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                        <select
+                          value={leaveDivisionFilter}
+                          onChange={(e) => setLeaveDivisionFilter(e.target.value)}
+                          className="w-full sm:w-auto bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 text-xs rounded-xl px-3 py-1.5 outline-none focus:border-sky-500"
+                        >
+                          <option value="all">Semua Divisi Klinik</option>
+                          {divisionsList.map((div) => (
+                            <option key={div.id} value={div.id}>
+                              {div.name}
+                            </option>
+                          ))}
+                        </select>
+
+                        <div className="relative w-full sm:w-64">
+                          <Search className="h-3.5 w-3.5 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={leaveSearchTerm}
+                            onChange={(e) => setLeaveSearchTerm(e.target.value)}
+                            placeholder="Cari nama, alasan, catatan..."
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 text-xs rounded-xl pl-8 pr-3 py-1.5 outline-none focus:border-sky-500 placeholder-slate-400 dark:placeholder-slate-500"
+                          />
+                          {leaveSearchTerm && (
+                            <button
+                              onClick={() => setLeaveSearchTerm('')}
+                              className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Table Permohonan Izin & Cuti */}
+                    {/* Tampilan Mobile: Kartu Permohonan Izin & Cuti Tanpa Perlu Digeser */}
+                    <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/60 bg-white dark:bg-slate-950/40">
+                      {leavesLoading ? (
+                        <div className="py-12 text-center text-slate-500">
+                          <RefreshCw className="h-5 w-5 animate-spin text-sky-500 mx-auto mb-2" />
+                          <p className="text-xs">Memuat permohonan izin & cuti...</p>
+                        </div>
+                      ) : filteredLeavesList.length === 0 ? (
+                        <div className="py-10 px-4 text-center text-slate-500">
+                          <CalendarCheck className="h-8 w-8 text-slate-400 mx-auto mb-2 stroke-[1.5]" />
+                          <p className="font-semibold text-slate-700 dark:text-slate-300 text-xs">Tidak ada data permohonan cuti</p>
+                          <p className="text-[11px] text-slate-500 mt-1">Tidak ada pengajuan yang sesuai dengan kriteria filter saat ini.</p>
+                          {(leaveStatusFilter !== 'all' || leaveDivisionFilter !== 'all' || leaveSearchTerm) && (
+                            <button
+                              onClick={() => {
+                                setLeaveStatusFilter('all');
+                                setLeaveDivisionFilter('all');
+                                setLeaveSearchTerm('');
+                              }}
+                              className="mt-2 text-xs font-semibold text-sky-600 dark:text-sky-400 hover:underline"
+                            >
+                              Reset Semua Filter
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        filteredLeavesList.map((item: any) => {
+                          const typeInfo = getLeaveTypeInfo(item.leaveType);
+                          const isPending = item.status === 'PENDING';
+                          const isApproved = item.status === 'APPROVED';
+                          const isRejected = item.status === 'REJECTED';
+
+                          return (
+                            <div key={`m-leave-${item.id}`} className="p-4 space-y-3">
+                              {/* Header Kartu: Nama Karyawan & Status Badge */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
+                                    {item.user?.fullName?.charAt(0)?.toUpperCase() || 'K'}
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-slate-900 dark:text-white text-xs block">
+                                      {item.user?.fullName}
+                                    </span>
+                                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                      {item.user?.division?.name || 'Tanpa Divisi'}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="shrink-0">
+                                  {isPending && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                      <Clock className="h-3 w-3" />
+                                      Menunggu ACC
+                                    </span>
+                                  )}
+                                  {isApproved && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                      <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                                      Disetujui
+                                    </span>
+                                  )}
+                                  {isRejected && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                                      <XCircle className="h-3 w-3 text-rose-500" />
+                                      Ditolak
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Jenis & Periode Cuti */}
+                              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 space-y-2 text-xs">
+                                <div className="flex items-center justify-between">
+                                  <span className={cn(
+                                    "px-2.5 py-1 rounded-lg text-xs font-bold border",
+                                    typeInfo.color
+                                  )}>
+                                    {typeInfo.label}
+                                  </span>
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                    {item.durationDays} hari kerja
+                                  </span>
+                                </div>
+
+                                <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                                  <span className="font-medium text-slate-900 dark:text-white">
+                                    {formatDateOnly(item.startDate)} — {formatDateOnly(item.endDate)}
+                                  </span>
+                                </div>
+
+                                <div className="pt-1 border-t border-slate-200 dark:border-slate-800/80">
+                                  <p className="text-[10px] uppercase font-bold text-slate-400">Alasan:</p>
+                                  <p className="text-slate-700 dark:text-slate-300 italic text-xs mt-0.5">
+                                    "{item.reason}"
+                                  </p>
+                                </div>
+
+                                {item.adminNotes && (
+                                  <div className="pt-1 border-t border-slate-200 dark:border-slate-800/80 text-[11px]">
+                                    <p className="text-[10px] uppercase font-bold text-sky-600 dark:text-sky-400">Catatan HR:</p>
+                                    <p className="text-slate-600 dark:text-slate-400 mt-0.5">
+                                      {item.adminNotes}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Tombol Tindakan HR di Mobile */}
+                              <div className="pt-1">
+                                {isPending ? (
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenReview(item, 'APPROVE')}
+                                      className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 transition-all"
+                                    >
+                                      <Check className="h-4 w-4" />
+                                      <span>ACC Izin</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenReview(item, 'REJECT')}
+                                      className="py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/70 dark:hover:bg-rose-900 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 transition-all"
+                                    >
+                                      <X className="h-4 w-4" />
+                                      <span>Tolak</span>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenReview(item, item.status)}
+                                    className="w-full py-2.5 rounded-xl saas-button text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center gap-1.5"
+                                  >
+                                    <MessageSquare className="h-3.5 w-3.5 text-sky-500" />
+                                    <span>Ubah Keputusan / Catatan</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Tampilan Desktop: Tabel Lengkap */}
+                    <div className="hidden md:block overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 font-semibold text-[11px] uppercase tracking-wider">
+                            <th className="py-3 px-4">Karyawan</th>
+                            <th className="py-3 px-4">Divisi Klinik</th>
+                            <th className="py-3 px-4">Jenis Permohonan</th>
+                            <th className="py-3 px-4">Periode & Durasi</th>
+                            <th className="py-3 px-4">Alasan Pengajuan</th>
+                            <th className="py-3 px-4">Status & Catatan Admin</th>
+                            <th className="py-3 px-4 text-center">Tindakan HR</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 bg-white dark:bg-slate-950/40">
+                          {leavesLoading ? (
+                            <tr>
+                              <td colSpan={7} className="py-12 text-center text-slate-500">
+                                <div className="flex flex-col items-center justify-center gap-2">
+                                  <RefreshCw className="h-5 w-5 animate-spin text-sky-500" />
+                                  <p className="text-xs">Memuat permohonan izin & cuti...</p>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : filteredLeavesList.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="py-12 text-center text-slate-500">
+                                <div className="flex flex-col items-center justify-center gap-2">
+                                  <CalendarCheck className="h-8 w-8 text-slate-400 stroke-[1.5]" />
+                                  <p className="font-semibold text-slate-700 dark:text-slate-300">
+                                    Tidak ada data permohonan cuti
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    Tidak ada pengajuan yang sesuai dengan kriteria filter saat ini.
+                                  </p>
+                                  {(leaveStatusFilter !== 'all' || leaveDivisionFilter !== 'all' || leaveSearchTerm) && (
+                                    <button
+                                      onClick={() => {
+                                        setLeaveStatusFilter('all');
+                                        setLeaveDivisionFilter('all');
+                                        setLeaveSearchTerm('');
+                                      }}
+                                      className="mt-2 text-xs font-semibold text-sky-600 dark:text-sky-400 hover:underline"
+                                    >
+                                      Reset Semua Filter
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredLeavesList.map((item: any) => {
+                              const typeInfo = getLeaveTypeInfo(item.leaveType);
+                              const isPending = item.status === 'PENDING';
+                              const isApproved = item.status === 'APPROVED';
+                              const isRejected = item.status === 'REJECTED';
+
+                              return (
+                                <tr
+                                  key={item.id}
+                                  className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
+                                >
+                                  {/* Karyawan (Nama & Email) */}
+                                  <td className="py-3.5 px-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
+                                        {item.user?.fullName?.charAt(0)?.toUpperCase() || 'K'}
+                                      </div>
+                                      <div>
+                                        <p className="font-bold text-slate-900 dark:text-white">
+                                          {item.user?.fullName || 'Karyawan'}
+                                        </p>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                                          {item.user?.email || '-'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* Divisi */}
+                                  <td className="py-3.5 px-4">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                                      <Building className="h-3 w-3 text-slate-500" />
+                                      <span>{item.user?.division?.name || 'Klinik Sativa'}</span>
+                                    </span>
+                                  </td>
+
+                                  {/* Jenis Izin / Cuti */}
+                                  <td className="py-3.5 px-4">
+                                    <span className={cn(
+                                      "inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold border",
+                                      typeInfo.color
+                                    )}>
+                                      {typeInfo.label}
+                                    </span>
+                                  </td>
+
+                                  {/* Periode & Durasi */}
+                                  <td className="py-3.5 px-4">
+                                    <div>
+                                      <div className="font-semibold text-slate-800 dark:text-slate-200">
+                                        {formatDateOnly(item.startDate)} - {formatDateOnly(item.endDate)}
+                                      </div>
+                                      <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                        {item.totalDays} Hari Kalender
+                                      </span>
+                                    </div>
+                                  </td>
+
+                                  {/* Alasan Pengajuan */}
+                                  <td className="py-3.5 px-4 max-w-xs">
+                                    <p className="text-slate-700 dark:text-slate-300 font-medium line-clamp-2">
+                                      {item.reason}
+                                    </p>
+                                  </td>
+
+                                  {/* Status & Catatan Admin */}
+                                  <td className="py-3.5 px-4 max-w-sm">
+                                    <div className="space-y-1.5">
+                                      {/* Status Badge */}
+                                      {isPending && (
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                          <span className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                          </span>
+                                          Menunggu ACC
+                                        </span>
+                                      )}
+
+                                      {isApproved && (
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                                          Disetujui (ACC)
+                                        </span>
+                                      )}
+
+                                      {isRejected && (
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                                          <XCircle className="h-3 w-3 text-rose-500" />
+                                          Ditolak
+                                        </span>
+                                      )}
+
+                                      {/* Catatan Admin / HR */}
+                                      {item.adminNotes ? (
+                                        <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px]">
+                                          <div className="flex items-start gap-1.5 text-slate-700 dark:text-slate-300">
+                                            <MessageSquare className="h-3 w-3 text-sky-500 shrink-0 mt-0.5" />
+                                            <span className="italic font-medium">{item.adminNotes}</span>
+                                          </div>
+                                          {item.reviewedBy && (
+                                            <p className="text-[10px] text-slate-400 mt-1 pl-4.5">
+                                              Oleh: {item.reviewedBy.fullName} {item.reviewedAt ? `• ${formatDateTime(item.reviewedAt)}` : ''}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <p className="text-[10px] text-slate-400 italic">
+                                          Belum ada catatan admin
+                                        </p>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Tindakan HR */}
+                                  <td className="py-3.5 px-4 text-center">
+                                    {isPending ? (
+                                      <div className="flex items-center justify-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenReview(item, 'APPROVE')}
+                                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold shadow-sm inline-flex items-center gap-1 transition-all"
+                                          title="Setujui permohonan izin ini"
+                                        >
+                                          <Check className="h-3 w-3" />
+                                          <span>ACC</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenReview(item, 'REJECT')}
+                                          className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/70 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[11px] font-bold shadow-sm inline-flex items-center gap-1 transition-all"
+                                          title="Tolak permohonan izin ini"
+                                        >
+                                          <X className="h-3 w-3" />
+                                          <span>Tolak</span>
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenReview(item, item.status)}
+                                        className="px-2.5 py-1.5 rounded-lg saas-button text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1"
+                                        title="Ubah keputusan atau perbarui catatan admin"
+                                      >
+                                        <MessageSquare className="h-3 w-3 text-sky-500" />
+                                        <span>Ubah / Catatan</span>
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Footer Info Permohonan */}
+                    <div className="p-3 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
+                      <span>
+                        Menampilkan <strong className="text-slate-800 dark:text-slate-200">{filteredLeavesList.length}</strong> dari <strong className="text-slate-800 dark:text-slate-200">{leavesData.stats.total}</strong> permohonan izin cuti.
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                        <ShieldCheck className="h-3.5 w-3.5 text-sky-500" />
+                        <span>Seluruh persetujuan dan penolakan tercatat dalam audit log HR klinik.</span>
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
             </AnimatePresence>
+          )}
+
+          {/* ========================================================
+             TAB 6: JADWAL SHIFT & TRANSAKSI TUKAR SHIFT (BULK SETUP & QUERYRUNNER APPROVAL)
+             ======================================================== */}
+          {sidebarNav === 'schedules' && (
+            <AdminScheduleManagement />
           )}
         </main>
 
@@ -1630,7 +2957,7 @@ function HrDashboardContent() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.15 }}
-              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl"
+              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
                 <div className="flex items-center gap-2">
@@ -1731,7 +3058,7 @@ function HrDashboardContent() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.15 }}
-              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl"
+              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
                 <div className="flex items-center gap-2">
@@ -1835,7 +3162,7 @@ function HrDashboardContent() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.15 }}
-              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl"
+              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
                 <div className="flex items-center gap-2">
@@ -1902,7 +3229,7 @@ function HrDashboardContent() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.15 }}
-              className="saas-card p-6 w-full max-w-lg bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl"
+              className="saas-card p-6 w-full max-w-lg bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
                 <div className="flex items-center gap-2">
@@ -2091,6 +3418,383 @@ function HrDashboardContent() {
                   </div>
                 </form>
               )}
+            </motion.div>
+          </div>
+        )}
+
+        {/* MODAL 5: TINJAU / ACC / TOLAK PERMOHONAN IZIN & CUTI DENGAN CATATAN */}
+        {reviewModalOpen && selectedLeaveForReview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.15 }}
+              className="saas-card p-6 w-full max-w-lg bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-sky-500/10 text-sky-500 dark:text-sky-400 border border-sky-500/20">
+                    <CalendarCheck className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      Keputusan Permohonan Izin / Cuti
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Tentukan keputusan ACC atau Tolak dengan catatan resmi HR
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setReviewModalOpen(false)}
+                  className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Ringkasan Pengajuan Karyawan */}
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 mb-4 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 dark:text-white text-sm">
+                      {selectedLeaveForReview.user?.fullName}
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      ({selectedLeaveForReview.user?.division?.name || 'Klinik Sativa'})
+                    </span>
+                  </div>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-bold border",
+                    getLeaveTypeInfo(selectedLeaveForReview.leaveType).color
+                  )}>
+                    {getLeaveTypeInfo(selectedLeaveForReview.leaveType).label}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                  <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span>
+                    <strong>Periode:</strong> {formatDateOnly(selectedLeaveForReview.startDate)} - {formatDateOnly(selectedLeaveForReview.endDate)}
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-[10px] font-bold">
+                    {selectedLeaveForReview.totalDays} Hari
+                  </span>
+                </div>
+
+                <div className="text-slate-700 dark:text-slate-300 pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+                  <span className="text-slate-500 font-semibold">Alasan Karyawan: </span>
+                  <span className="italic font-medium">"{selectedLeaveForReview.reason}"</span>
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmitReview} className="space-y-4">
+                {/* Pilihan Keputusan: ACC vs TOLAK */}
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-2">
+                    Pilih Keputusan HR:
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setReviewAction('APPROVE')}
+                      className={cn(
+                        "p-3 rounded-xl border text-left flex items-start gap-2.5 transition-all cursor-pointer",
+                        reviewAction === 'APPROVE'
+                          ? "bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 text-emerald-900 dark:text-emerald-200 shadow-sm ring-1 ring-emerald-500"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:border-slate-300"
+                      )}
+                    >
+                      <div className={cn(
+                        "p-1.5 rounded-lg mt-0.5",
+                        reviewAction === 'APPROVE' ? "bg-emerald-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                      )}>
+                        <Check className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold">ACC / Setujui</p>
+                        <p className="text-[11px] opacity-80 mt-0.5">Izin disetujui & jadwal shift disesuaikan</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setReviewAction('REJECT')}
+                      className={cn(
+                        "p-3 rounded-xl border text-left flex items-start gap-2.5 transition-all cursor-pointer",
+                        reviewAction === 'REJECT'
+                          ? "bg-rose-50 dark:bg-rose-950/60 border-rose-500 text-rose-900 dark:text-rose-200 shadow-sm ring-1 ring-rose-500"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:border-slate-300"
+                      )}
+                    >
+                      <div className={cn(
+                        "p-1.5 rounded-lg mt-0.5",
+                        reviewAction === 'REJECT' ? "bg-rose-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                      )}>
+                        <X className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold">Tolak Permohonan</p>
+                        <p className="text-[11px] opacity-80 mt-0.5">Izin ditolak disertai alasan jelas</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Input Catatan Tambahan Admin/HR */}
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1 flex items-center justify-between">
+                    <span>Catatan Tambahan Admin / HR:</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Tersimpan dalam log transparansi</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={reviewNotes}
+                    onChange={(e) => setReviewNotes(e.target.value)}
+                    placeholder={
+                      reviewAction === 'APPROVE'
+                        ? 'Contoh: Disetujui HR. Shift klinik telah dialihkan dan dikoordinasikan dengan supervisor...'
+                        : 'Contoh: Mohon maaf, permohonan belum dapat disetujui karena jadwal tindakan klinik penuh...'
+                    }
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-sky-500 text-slate-900 dark:text-white text-xs rounded-xl p-3 outline-none transition-colors placeholder-slate-400 dark:placeholder-slate-500"
+                  />
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Catatan ini akan langsung tertera di tabel permohonan beserta nama Anda sebagai reviewer.
+                  </p>
+                </div>
+
+                {/* Tombol Form */}
+                <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setReviewModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-semibold transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={reviewLoading}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-white text-xs font-semibold disabled:opacity-50 transition-colors flex items-center gap-2 shadow-sm",
+                      reviewAction === 'APPROVE'
+                        ? "bg-emerald-600 hover:bg-emerald-500"
+                        : "bg-rose-600 hover:bg-rose-500"
+                    )}
+                  >
+                    {reviewLoading ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : reviewAction === 'APPROVE' ? (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        <span>Simpan & ACC Permohonan</span>
+                      </>
+                    ) : (
+                      <>
+                        <X className="h-3.5 w-3.5" />
+                        <span>Simpan & Tolak Permohonan</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* MODAL 6: BUAT PENGAJUAN IZIN / CUTI BARU OLEH HR */}
+        {createLeaveModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.15 }}
+              className="saas-card p-6 w-full max-w-lg bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20">
+                    <FolderPlus className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      Buat Permohonan Cuti Baru
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Catat pengajuan izin/cuti karyawan langsung ke dalam sistem klinik
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCreateLeaveModalOpen(false)}
+                  className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateLeave} className="space-y-4">
+                {/* Pilih Karyawan */}
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                    Pilih Karyawan Klinik *
+                  </label>
+                  <select
+                    value={newLeaveEmployeeId}
+                    onChange={(e) => setNewLeaveEmployeeId(e.target.value)}
+                    required
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 text-slate-900 dark:text-white text-xs rounded-xl px-3.5 py-2.5 outline-none transition-colors"
+                  >
+                    <option value="">-- Pilih Karyawan --</option>
+                    {employeesData.employees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.fullName} &bull; {emp.divisionName || emp.division?.name || 'Karyawan'} ({emp.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Pilih Jenis Permohonan */}
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                    Jenis Izin / Cuti *
+                  </label>
+                  <select
+                    value={newLeaveType}
+                    onChange={(e) => setNewLeaveType(e.target.value)}
+                    required
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 text-slate-900 dark:text-white text-xs rounded-xl px-3.5 py-2.5 outline-none transition-colors"
+                  >
+                    <option value="cuti_tahunan">Cuti Tahunan (Tahunan Reguler)</option>
+                    <option value="izin_sakit">Izin Sakit (Surat Dokter)</option>
+                    <option value="izin_keperluan_pribadi">Izin Keperluan Pribadi / Keluarga</option>
+                    <option value="cuti_melahirkan">Cuti Melahirkan / Persalinan</option>
+                    <option value="izin_khusus">Izin Khusus / Lainnya</option>
+                  </select>
+                </div>
+
+                {/* Periode Tanggal (Mulai & Selesai) */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                      Tanggal Mulai *
+                    </label>
+                    <input
+                      type="date"
+                      value={newLeaveStartDate}
+                      onChange={(e) => setNewLeaveStartDate(e.target.value)}
+                      required
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 text-slate-900 dark:text-white text-xs rounded-xl px-3 py-2 outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                      Tanggal Selesai *
+                    </label>
+                    <input
+                      type="date"
+                      value={newLeaveEndDate}
+                      onChange={(e) => setNewLeaveEndDate(e.target.value)}
+                      required
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 text-slate-900 dark:text-white text-xs rounded-xl px-3 py-2 outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* Alasan Pengajuan */}
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                    Alasan Pengajuan Cuti / Izin *
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={newLeaveReason}
+                    onChange={(e) => setNewLeaveReason(e.target.value)}
+                    required
+                    placeholder="Tuliskan keterangan keperluan cuti/izin karyawan..."
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 text-slate-900 dark:text-white text-xs rounded-xl p-3 outline-none transition-colors placeholder-slate-400 dark:placeholder-slate-500"
+                  />
+                </div>
+
+                {/* Status Awal & Catatan Admin */}
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3">
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                      Status Awal Permohonan:
+                    </label>
+                    <div className="flex items-center gap-4 text-xs">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="initialStatus"
+                          value="PENDING"
+                          checked={newLeaveInitialStatus === 'PENDING'}
+                          onChange={() => setNewLeaveInitialStatus('PENDING')}
+                          className="text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="font-medium text-slate-700 dark:text-slate-300">Menunggu ACC (Pending)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="initialStatus"
+                          value="APPROVED"
+                          checked={newLeaveInitialStatus === 'APPROVED'}
+                          onChange={() => setNewLeaveInitialStatus('APPROVED')}
+                          className="text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span className="font-semibold text-emerald-700 dark:text-emerald-400">Langsung Disetujui (ACC)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 text-xs font-semibold mb-1">
+                      Catatan Awal HR (Opsional):
+                    </label>
+                    <input
+                      type="text"
+                      value={newLeaveAdminNotes}
+                      onChange={(e) => setNewLeaveAdminNotes(e.target.value)}
+                      placeholder="Contoh: Diajukan via HR, berkas fisik telah diverifikasi."
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 text-slate-900 dark:text-white text-xs rounded-xl px-3 py-2 outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* Tombol Aksi */}
+                <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setCreateLeaveModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-semibold transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={createLeaveLoading}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-semibold disabled:opacity-50 transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {createLeaveLoading ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        <span>Simpan Permohonan Izin</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

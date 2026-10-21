@@ -10,11 +10,26 @@ import { GeminiModule } from './gemini/gemini.module';
 import { CronModule } from './cron/cron.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { OfficeLocationModule } from './office-location/office-location.module';
+import { LeaveModule } from './leave/leave.module';
+
+import * as path from 'path';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Schedule } from './schedule/entities/schedule.entity';
+import { ShiftSwapRequest } from './schedule/entities/shift-swap-request.entity';
+import { Attendance } from './attendance/entities/attendance.entity';
+import { ScheduleModule } from './schedule/schedule.module';
+import { AttendanceModule } from './attendance/attendance.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+    TypeOrmModule.forRoot({
+      type: 'better-sqlite3',
+      database: path.resolve(process.cwd(), 'prisma/dev.db'),
+      entities: [Schedule, ShiftSwapRequest, Attendance],
+      synchronize: false,
     }),
     MailerModule.forRootAsync({
       imports: [ConfigModule],
@@ -41,6 +56,9 @@ import { OfficeLocationModule } from './office-location/office-location.module';
     CronModule,
     AnalyticsModule,
     OfficeLocationModule,
+    LeaveModule,
+    ScheduleModule,
+    AttendanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

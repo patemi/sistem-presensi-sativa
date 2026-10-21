@@ -28,18 +28,6 @@ export default function RegisterPage() {
   const [validating, setValidating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  useEffect(() => {
-    if (user) {
-      if (user.role === 'karyawan') {
-        router.push('/checkin');
-      } else if (user.role === 'hr') {
-        router.push('/dashboard');
-      } else {
-        router.push('/owner-dashboard');
-      }
-    }
-  }, [user, router]);
-
   const handleValidateInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteCode) return;
@@ -83,40 +71,40 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center overflow-hidden py-12 px-4 bg-slate-50 dark:bg-[#0b131d] text-slate-900 dark:text-white transition-colors duration-200">
+    <div className="relative min-h-screen flex items-center justify-center overflow-hidden py-10 px-4 bg-slate-50 dark:bg-[#0b131d] text-slate-900 dark:text-white transition-colors duration-200">
       {/* Decorative background elements */}
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-sky-500/10 dark:bg-[rgba(160,212,228,0.2)] rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-teal-500/10 dark:bg-[rgba(31,62,83,0.5)] rounded-full blur-[120px] pointer-events-none" />
 
       {/* Top Header Row */}
-      <div className="absolute top-6 right-6 z-20 flex items-center gap-2.5">
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 flex items-center gap-2">
         <ThemeToggle />
         <SwitchLanguage />
       </div>
 
-      <div className="w-full max-w-md z-10">
+      <div className="w-full max-w-md z-10 pt-8 sm:pt-0">
         {/* Brand Logo & Header */}
-        <div className="flex flex-col items-center mb-8 text-center">
-          <div className="h-16 w-16 rounded-2xl bg-sky-50 dark:bg-white/10 border border-sky-200 dark:border-white/10 flex items-center justify-center shadow-sm mb-4 transform hover:scale-105 transition-transform duration-300">
-            <Droplets className="h-8 w-8 text-sky-600 dark:text-[#a0d4e4]" />
+        <div className="flex flex-col items-center mb-6 text-center">
+          <div className="h-14 w-14 rounded-2xl bg-sky-50 dark:bg-white/10 border border-sky-200 dark:border-white/10 flex items-center justify-center shadow-sm mb-3 transform hover:scale-105 transition-transform duration-300">
+            <Droplets className="h-7 w-7 text-sky-600 dark:text-[#a0d4e4]" />
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white mb-1">
             {t('common.app_name')}
           </h1>
-          <p className="text-slate-600 dark:text-[#a0d4e4] text-sm font-medium max-w-xs">
+          <p className="text-slate-600 dark:text-[#a0d4e4] text-xs font-medium max-w-xs">
             {t('common.tagline')}
           </p>
         </div>
 
         {/* Card Body */}
-        <div className="bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-xl rounded-3xl p-8">
+        <div className="bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl p-6 md:p-8">
           <div className="mb-6 text-center">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center justify-center gap-2 mb-2">
-              <UserPlus className="h-5 w-5 text-sky-600 dark:text-[#a0d4e4]" />
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center justify-center gap-2 mb-1.5">
+              <UserPlus className="h-4.5 w-4.5 text-sky-600 dark:text-[#a0d4e4]" />
               {t('auth.register_title')}
             </h2>
             <p className="text-slate-500 dark:text-[#a0d4e4] text-xs leading-relaxed">
-              Pendaftaran akun baru di bawah organisasi BelajarVibe Corporate.
+              Pendaftaran akun staf klinik di bawah organisasi Klinik Sativa.
             </p>
           </div>
 

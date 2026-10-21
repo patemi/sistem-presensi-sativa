@@ -72,7 +72,7 @@ export class CheckinService {
     const disableGeofence = process.env.DISABLE_GEOFENCE === 'true';
     if (!nearestResult.isWithin && !disableGeofence) {
       throw new UnprocessableEntityException(
-        `Lokasi Anda di luar radius kantor (${nearestResult.distance.toFixed(0)}m dari ${nearestOffice.label}, maks ${nearestOffice.radiusMeters}m). Presensi ditolak.`,
+        `Lokasi Anda di luar radius kantor (${nearestResult.distance.toFixed(1)}m dari ${nearestOffice.label}, batas maksimal < ${nearestOffice.radiusMeters}m). Presensi ditolak.`,
       );
     }
 
@@ -184,7 +184,7 @@ export class CheckinService {
     const disableGeofence = process.env.DISABLE_GEOFENCE === 'true';
     if (!nearestResult.isWithin && !disableGeofence) {
       throw new UnprocessableEntityException(
-        `Lokasi Anda di luar radius kantor (${nearestResult.distance.toFixed(0)}m dari ${nearestOffice.label}, maks ${nearestOffice.radiusMeters}m). Presensi pulang ditolak.`,
+        `Lokasi Anda di luar radius kantor (${nearestResult.distance.toFixed(1)}m dari ${nearestOffice.label}, batas maksimal < ${nearestOffice.radiusMeters}m). Presensi pulang ditolak.`,
       );
     }
 

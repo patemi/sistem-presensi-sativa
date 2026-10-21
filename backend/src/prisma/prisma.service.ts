@@ -40,10 +40,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         await this.officeLocation.create({
           data: {
             organizationId: org.id,
-            label: 'Klinik Pusat',
-            latitude: -6.2088,
-            longitude: 106.8456,
-            radiusMeters: 100,
+            label: 'Orella Aesthetic Clinic',
+            latitude: -7.5603728,
+            longitude: 110.7666546,
+            radiusMeters: 2,
           },
         });
       }

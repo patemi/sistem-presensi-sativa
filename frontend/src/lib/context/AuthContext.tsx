@@ -40,17 +40,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // Restore session
+    // Restore session if valid and not expired
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
     
     if (savedToken && savedUser) {
-      setToken(savedToken);
-      const parsedUser = JSON.parse(savedUser);
-      setUser(parsedUser);
-      // Sync cookies for server-side middleware
-      document.cookie = `token=${savedToken}; path=/; max-age=604800; SameSite=Lax`;
-      document.cookie = `user_role=${parsedUser.role}; path=/; max-age=604800; SameSite=Lax`;
+      try {
+        const parts = savedToken.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(
+            decodeURIComponent(
+              atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
+                .split('')
+                .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+            )
+          );
+          const nowInSeconds = Math.floor(Date.now() / 1000);
+          if (payload.exp && typeof payload.exp === 'number' && payload.exp < nowInSeconds) {
+            throw new Error('Token expired');
+          }
+
+          setToken(savedToken);
+          const parsedUser = JSON.parse(savedUser);
+          setUser(parsedUser);
+          // Sync cookies for server-side middleware (1 day max-age)
+          document.cookie = `token=${savedToken}; path=/; max-age=86400; SameSite=Lax`;
+          document.cookie = `user_role=${parsedUser.role}; path=/; max-age=86400; SameSite=Lax`;
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Expired or corrupt session: clean up completely
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; SameSite=Lax';
+        document.cookie = 'user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; SameSite=Lax';
+      }
     }
     setLoading(false);
   }, []);
@@ -78,14 +104,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       document.cookie = `token=${access_token}; path=/; max-age=604800; SameSite=Lax`;
       document.cookie = `user_role=${loggedUser.role}; path=/; max-age=604800; SameSite=Lax`;
       
-      // Redirect based on role
-      if (loggedUser.role === 'karyawan') {
-        router.push('/checkin');
-      } else if (loggedUser.role === 'hr') {
-        router.push('/dashboard');
-      } else {
-        router.push('/owner-dashboard');
-      }
+      // Redirect based on role with full navigation to guarantee cookie transmission
+      const targetPath =
+        loggedUser.role === 'karyawan'
+          ? '/checkin'
+          : loggedUser.role === 'hr'
+          ? '/dashboard'
+          : '/owner-dashboard';
+      window.location.href = targetPath;
     } catch (error: any) {
       const message = error.response?.data?.message || 'Login gagal';
       throw new Error(message);
@@ -120,8 +146,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    document.cookie = 'user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; SameSite=Lax';
+    document.cookie = 'user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; SameSite=Lax';
     router.push('/login');
   };
 

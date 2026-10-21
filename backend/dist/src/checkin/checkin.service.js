@@ -56,7 +56,7 @@ let CheckinService = CheckinService_1 = class CheckinService {
         }
         const disableGeofence = process.env.DISABLE_GEOFENCE === 'true';
         if (!nearestResult.isWithin && !disableGeofence) {
-            throw new common_1.UnprocessableEntityException(`Lokasi Anda di luar radius kantor (${nearestResult.distance.toFixed(0)}m dari ${nearestOffice.label}, maks ${nearestOffice.radiusMeters}m). Presensi ditolak.`);
+            throw new common_1.UnprocessableEntityException(`Lokasi Anda di luar radius kantor (${nearestResult.distance.toFixed(1)}m dari ${nearestOffice.label}, batas maksimal < ${nearestOffice.radiusMeters}m). Presensi ditolak.`);
         }
         const checkInTime = new Date();
         const [shiftHour, shiftMin] = (user.shiftStart || '08:00').split(':').map(Number);
@@ -127,7 +127,7 @@ let CheckinService = CheckinService_1 = class CheckinService {
         }
         const disableGeofence = process.env.DISABLE_GEOFENCE === 'true';
         if (!nearestResult.isWithin && !disableGeofence) {
-            throw new common_1.UnprocessableEntityException(`Lokasi Anda di luar radius kantor (${nearestResult.distance.toFixed(0)}m dari ${nearestOffice.label}, maks ${nearestOffice.radiusMeters}m). Presensi pulang ditolak.`);
+            throw new common_1.UnprocessableEntityException(`Lokasi Anda di luar radius kantor (${nearestResult.distance.toFixed(1)}m dari ${nearestOffice.label}, batas maksimal < ${nearestOffice.radiusMeters}m). Presensi pulang ditolak.`);
         }
         const checkOutTime = new Date();
         const checkout = await this.prisma.attendanceCheckout.create({

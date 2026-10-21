@@ -21,6 +21,7 @@ model Organization {
   users             User[]
   officeLocations   OfficeLocation[]
   wellbeingFeedback WellbeingFeedback[]
+  leaveRequests     LeaveRequest[]
 
   @@map("organizations")
 }
@@ -79,6 +80,10 @@ model User {
 
   attendanceCheckins  AttendanceCheckin[]
   attendanceCheckouts AttendanceCheckout[]
+  leaveRequests       LeaveRequest[]        @relation("EmployeeLeaveRequests")
+  reviewedLeaves      LeaveRequest[]        @relation("ReviewedLeaveRequests")
+  schedules           Schedule[]
+  attendances         Attendance[]
 
   @@map("users")
 }
@@ -159,3 +164,83 @@ model DivisionWellbeingInsight {
 
   @@map("division_wellbeing_insights")
 }
+
+// ============================================
+// PERMOHONAN IZIN & CUTI KARYAWAN
+// ============================================
+
+model LeaveRequest {
+  id             String       @id @default(uuid())
+  userId         String       @map("user_id")
+  user           User         @relation("EmployeeLeaveRequests", fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  leaveType      String       @map("leave_type") // 'cuti_tahunan', 'izin_sakit', 'izin_keperluan_pribadi', 'cuti_melahirkan', 'izin_khusus'
+  startDate      DateTime     @map("start_date")
+  endDate        DateTime     @map("end_date")
+  totalDays      Int          @default(1) @map("total_days")
+  reason         String       // Alasan pengajuan
+  attachmentUrl  String?      @map("attachment_url") // Lampiran (surat dokter/dokumen)
+  
+  status         String       @default("PENDING") // 'PENDING', 'APPROVED', 'REJECTED'
+  
+  // Respon dari HR/Admin
+  adminNotes     String?      @map("admin_notes") // Catatan tambahan dari HR saat ACC / Tolak
+  reviewedById   String?      @map("reviewed_by_id")
+  reviewedBy     User?        @relation("ReviewedLeaveRequests", fields: [reviewedById], references: [id])
+  reviewedAt     DateTime?    @map("reviewed_at")
+  
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@map("leave_requests")
+}
+
+// ============================================
+// MANAJEMEN SHIFT & JADWAL KERJA
+// ============================================
+
+model Schedule {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      String   // 'YYYY-MM-DD'
+  shiftType String   @map("shift_type") // 'PAGI' (08:30-17:00) | 'SIANG' (10:30-19:00)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, date])
+  @@map("schedules")
+}
+
+model ShiftSwapRequest {
+  id            String   @id @default(uuid())
+  requesterId   String   @map("requester_id")
+  targetUserId  String   @map("target_user_id")
+  requesterDate String   @map("requester_date")
+  targetDate    String   @map("target_date")
+  reason        String
+  status        String   @default("PENDING") // 'PENDING', 'PEER_APPROVED', 'HR_APPROVED', 'REJECTED'
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("shift_swap_requests")
+}
+
+model Attendance {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date            String    // 'YYYY-MM-DD'
+  checkInTime     DateTime? @map("check_in_time")
+  checkOutTime    DateTime? @map("check_out_time")
+  overtimeMinutes Int       @default(0) @map("overtime_minutes")
+  mentalHealthLog String?   @map("mental_health_log")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("attendances")
+}
+
+

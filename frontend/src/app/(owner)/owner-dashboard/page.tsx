@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/context/AuthContext';
 import { useTranslation } from '@/hooks/useTranslation';
 import SwitchLanguage from '@/components/ui/SwitchLanguage';
 import ThemeToggle from '@/components/ui/ThemeToggle';
+import ScrollToTop from '@/components/ui/ScrollToTop';
 import AuthGuard from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
 import { useRouter } from 'next/navigation';
@@ -256,7 +257,76 @@ function OwnerDashboardContent() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                {/* Tampilan Mobile: Kartu Analisis Divisi Tanpa Perlu Digeser */}
+                <div className="md:hidden space-y-3">
+                  {correlationData.map((row: any) => (
+                    <div
+                      key={`m-owner-corr-${row.divisionId}`}
+                      className="p-4 rounded-2xl bg-white/80 dark:bg-slate-900/90 border border-slate-200 dark:border-white/10 shadow-sm space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                            {row.divisionName}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 dark:text-[#a0d4e4]">
+                            {row.employeeCount} Karyawan
+                          </p>
+                        </div>
+
+                        <div>
+                          {row.isRestricted ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-bold text-slate-500 dark:text-white/60">
+                              <Lock className="h-3 w-3" />
+                              Anonim
+                            </span>
+                          ) : (
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-bold border flex items-center gap-1 ${getSentimentColor(row.avgSentimentScore)}`}>
+                              <span>{row.avgSentimentScore.toFixed(2)}</span>
+                              <span className="uppercase text-[8px] opacity-80">({getSentimentLabel(row.avgSentimentScore)})</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-white/[0.03] p-2.5 rounded-xl border border-slate-100 dark:border-white/5">
+                        <div>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">Kehadiran Bulanan</span>
+                          <span className="font-mono font-bold text-slate-900 dark:text-white">{row.monthlyAttendanceRate}%</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">Keterlambatan</span>
+                          <span className="font-mono font-bold text-slate-600 dark:text-white/80">{row.tardinessRate}%</span>
+                        </div>
+                      </div>
+
+                      {!row.isRestricted && row.dominantThemes && row.dominantThemes.length > 0 && (
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase font-semibold mb-1">Tema Utama</p>
+                          <div className="flex flex-wrap gap-1">
+                            {row.dominantThemes.map((theme: string) => (
+                              <span key={theme} className="px-2 py-0.5 rounded bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-white/90 font-bold text-[9px] uppercase tracking-wider border border-slate-200 dark:border-white/10">
+                                {theme}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {row.recommendation && (
+                        <div className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5">
+                          <p className="text-[10px] text-slate-400 uppercase font-semibold mb-0.5">Rekomendasi</p>
+                          <p className="text-slate-700 dark:text-white/90 text-xs leading-relaxed">
+                            {row.recommendation}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Tampilan Desktop: Tabel Lengkap */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-[#a0d4e4] uppercase font-bold tracking-widest text-[10px]">
@@ -338,6 +408,8 @@ function OwnerDashboardContent() {
           &copy; SATIVA &bull; Executive Portal
         </p>
       </footer>
+
+      <ScrollToTop />
     </div>
   );
 }

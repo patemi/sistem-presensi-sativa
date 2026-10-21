@@ -4,6 +4,7 @@ import "./globals.css";
 import { LanguageProvider } from "@/lib/context/LanguageContext";
 import { AuthProvider } from "@/lib/context/AuthContext";
 import { ThemeProvider } from "@/lib/context/ThemeContext";
+import ScrollToTop from "@/components/ui/ScrollToTop";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,7 +29,7 @@ export default function RootLayout({
   return (
     <html
       lang="id"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} min-h-full antialiased`}
       suppressHydrationWarning
     >
       <head>
@@ -53,6 +54,7 @@ export default function RootLayout({
           <LanguageProvider>
             <AuthProvider>
               {children}
+              <ScrollToTop />
             </AuthProvider>
           </LanguageProvider>
         </ThemeProvider>

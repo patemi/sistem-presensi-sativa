@@ -5,12 +5,14 @@ import { useAuth } from '@/lib/context/AuthContext';
 import { useTranslation } from '@/hooks/useTranslation';
 import SwitchLanguage from '@/components/ui/SwitchLanguage';
 import ThemeToggle from '@/components/ui/ThemeToggle';
+import ScrollToTop from '@/components/ui/ScrollToTop';
 import AuthGuard from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { 
   LogOut, Droplets, History, ArrowLeft, Calendar, 
-  MapPin, LogIn, Clock
+  MapPin, LogIn, Clock, CheckCircle2, AlertCircle,
+  Briefcase, Check
 } from 'lucide-react';
 
 export default function HistoryPage() {
@@ -43,84 +45,113 @@ function HistoryContent() {
     loadHistory();
   }, []);
 
-  return (
-    <div className="relative min-h-screen flex flex-col justify-between overflow-hidden bg-slate-50 dark:bg-[#0b131d] text-slate-900 dark:text-white transition-colors duration-200">
-      {/* Decorative background elements */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-[rgba(160,212,228,0.2)] rounded-full blur-[100px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-[rgba(31,62,83,0.5)] rounded-full blur-[120px] pointer-events-none" />
+  // Calculate summary stats
+  const totalEntries = historyList.length;
+  const onTimeCount = historyList.filter(item => item.lateMinutes === 0).length;
+  const lateCount = historyList.filter(item => item.lateMinutes > 0).length;
 
-      {/* Header / Navbar */}
-      <nav className="w-full bg-white dark:bg-[#102636] border-b border-slate-200 dark:border-white/10 shadow-sm md:shadow-2xl z-30 sticky top-0 transition-colors">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+  return (
+    <div className="relative min-h-screen flex flex-col justify-between overflow-x-hidden bg-slate-50 dark:bg-[#0b131d] text-slate-900 dark:text-white transition-colors duration-200">
+      {/* Ambient background glows */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-sky-400/10 dark:bg-[rgba(160,212,228,0.12)] rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-teal-500/10 dark:bg-[rgba(31,62,83,0.35)] rounded-full blur-[140px] pointer-events-none" />
+
+      {/* Navbar */}
+      <nav className="w-full bg-white/95 dark:bg-[#102636]/90 border-b border-slate-200 dark:border-white/10 shadow-sm sticky top-0 z-30 backdrop-blur-md transition-colors">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3">
           <button
             onClick={() => router.push('/checkin')}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-700 dark:text-white shadow-sm uppercase tracking-wider"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-white shadow-sm transition-all"
           >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('common.back')}</span>
+            <ArrowLeft className="h-4 w-4 text-sky-500" />
+            <span>Kembali ke Presensi</span>
           </button>
 
-          <div className="flex items-center space-x-2.5">
-            <div className="h-10 w-10 rounded-full bg-sky-50 dark:bg-white/5 border border-sky-200 dark:border-[#a0d4e4]/30 flex items-center justify-center shadow-sm">
-              <Droplets className="h-5 w-5 text-sky-600 dark:text-[#a0d4e4]" />
-            </div>
-            <span className="font-extrabold text-xl tracking-widest text-slate-900 dark:text-white uppercase drop-shadow-md hidden sm:inline">
-              {t('common.app_name')}
-            </span>
-          </div>
-
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
             <ThemeToggle />
             <SwitchLanguage />
 
             <button
               onClick={logout}
-              className="p-2.5 rounded-xl bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all duration-300 shadow-sm"
-              title={t('common.logout')}
+              className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm"
+              title="Keluar"
             >
-              <LogOut className="h-4.5 w-4.5" />
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Keluar</span>
             </button>
           </div>
         </div>
       </nav>
 
-      {/* Main Content Body */}
-      <main className="w-full max-w-2xl mx-auto px-4 py-12 z-10 flex-1 flex flex-col justify-start">
-        {/* Title details */}
-        <div className="mb-8 flex flex-col items-center text-center">
-          <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-sky-50 dark:bg-[rgba(160,212,228,0.1)] border border-sky-200 dark:border-[#a0d4e4]/30 text-sky-600 dark:text-[#a0d4e4] mb-4 shadow-sm">
-            <History className="h-8 w-8" />
+      {/* Main Content */}
+      <main className="w-full max-w-2xl mx-auto px-4 py-6 sm:py-10 z-10 flex-1 flex flex-col justify-start">
+        {/* Title Header */}
+        <div className="mb-6 text-center">
+          <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-600 dark:text-sky-400 mb-3 shadow-sm">
+            <History className="h-7 w-7" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white heading-display drop-shadow-md">
-            RIWAYAT PRESENSI
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            RIWAYAT PRESENSI SAYA
           </h1>
-          <p className="text-slate-500 dark:text-[#a0d4e4] text-xs mt-2 leading-relaxed opacity-80 max-w-sm">
-            Catatan kehadiran fisik Anda. Data kesehatan mental dianonimkan dan tidak ditampilkan di sini.
+          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 leading-relaxed max-w-sm mx-auto">
+            Catatan jam kehadiran dan kepulangan Anda di klinik Sativa. Data evaluasi perasaan diproses anonim demi privasi Anda.
           </p>
         </div>
 
-        {loading ? (
-          /* LOADING */
-          <div className="py-24 flex flex-col items-center justify-center">
-            <div className="h-10 w-10 border-4 border-slate-300 dark:border-[rgba(160,212,228,0.2)] border-t-sky-500 dark:border-t-[#a0d4e4] rounded-full animate-spin mb-4" />
-            <p className="text-slate-500 dark:text-[#a0d4e4] text-xs font-semibold uppercase tracking-wider animate-pulse">
-              Memuat data...
+        {/* Ringkasan Statistik 3 Card */}
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-4 mb-6">
+          <div className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-sm text-center">
+            <p className="text-[10px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Total Hadir
             </p>
+            <p className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white mt-1">
+              {totalEntries}
+            </p>
+            <p className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5">Hari Tercatat</p>
+          </div>
+
+          <div className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-sm text-center">
+            <p className="text-[10px] sm:text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+              Tepat Waktu
+            </p>
+            <p className="text-lg sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+              {onTimeCount}
+            </p>
+            <p className="text-[9px] sm:text-[10px] text-emerald-500/80 mt-0.5">Sesuai Shift</p>
+          </div>
+
+          <div className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-sm text-center">
+            <p className="text-[10px] sm:text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+              Terlambat
+            </p>
+            <p className="text-lg sm:text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+              {lateCount}
+            </p>
+            <p className="text-[9px] sm:text-[10px] text-amber-500/80 mt-0.5">Hari</p>
+          </div>
+        </div>
+
+        {/* Timeline Content */}
+        {loading ? (
+          <div className="py-20 flex flex-col items-center justify-center">
+            <div className="h-9 w-9 border-3 border-slate-300 dark:border-slate-700 border-t-sky-500 rounded-full animate-spin mb-3" />
+            <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Memuat log kehadiran...</p>
           </div>
         ) : historyList.length === 0 ? (
-          /* NO DATA */
-          <div className="py-20 text-center glass-card border border-slate-200 dark:border-[rgba(255,255,255,0.1)] shadow-sm md:shadow-xl rounded-3xl flex flex-col items-center">
-            <Clock className="h-12 w-12 text-slate-400 dark:text-[rgba(160,212,228,0.4)] mb-4" />
-            <p className="text-slate-500 dark:text-[#a0d4e4] text-sm font-semibold opacity-80">{t('history.no_data')}</p>
+          <div className="py-16 text-center bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
+            <Clock className="h-10 w-10 text-slate-400 mx-auto mb-3" />
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-1">Belum Ada Riwayat Presensi</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+              Presensi yang Anda lakukan hari ini akan otomatis tercatat dan tersusun rapi di halaman ini.
+            </p>
           </div>
         ) : (
-          /* TIMELINE LIST */
-          <div className="relative border-l border-slate-200 dark:border-[rgba(160,212,228,0.2)] pl-6 space-y-8 ml-3">
-            {historyList.map((item: any, index: number) => {
-              const date = new Date(item.checkInTime).toLocaleDateString('id-ID', {
+          <div className="space-y-4">
+            {historyList.map((item: any) => {
+              const dateStr = new Date(item.checkInTime).toLocaleDateString('id-ID', {
                 weekday: 'long',
                 year: 'numeric',
-                month: 'long',
+                month: 'short',
                 day: 'numeric',
               });
               const timeIn = new Date(item.checkInTime).toLocaleTimeString('id-ID', {
@@ -132,69 +163,76 @@ function HistoryContent() {
                     hour: '2-digit',
                     minute: '2-digit',
                   })
-                : '-';
+                : null;
 
               const isComplete = item.attendanceStatus === 'hadir';
               const isLate = item.lateMinutes > 0;
 
               return (
-                <div key={item.id} className="relative group">
-                  {/* Timeline bullet dot */}
-                  <span className="absolute -left-[31px] top-4 flex h-4 w-4 items-center justify-center rounded-full bg-white dark:bg-[#102636] border border-sky-400 dark:border-[#a0d4e4]/50 group-hover:border-sky-500 transition-colors duration-300 shadow-sm">
-                    <span className="h-1.5 w-1.5 rounded-full bg-sky-500 dark:bg-[#a0d4e4]" />
-                  </span>
-
-                  {/* Entry card */}
-                  <div className="glass-card rounded-2xl p-5 border border-slate-200 dark:border-white/10 hover:border-sky-300 dark:hover:border-[rgba(160,212,228,0.3)] transition-all duration-300 shadow-sm md:shadow-lg group-hover:transform group-hover:-translate-y-1">
-                    {/* Header info */}
-                    <div className="flex flex-wrap items-center justify-between gap-2.5 mb-4 border-b border-slate-100 dark:border-[rgba(255,255,255,0.05)] pb-4">
-                      <div className="flex items-center gap-2 text-xs font-bold text-sky-700 dark:text-[#a0d4e4]">
+                <div
+                  key={item.id}
+                  className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-sky-300 dark:hover:border-slate-700"
+                >
+                  {/* Card Header */}
+                  <div className="flex items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-100 dark:border-slate-800/80">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-sky-50 dark:bg-sky-950 text-sky-600 dark:text-sky-400">
                         <Calendar className="h-4 w-4" />
-                        <span className="uppercase tracking-wider">{date}</span>
                       </div>
-
-                      {/* Status indicator */}
-                      <div className="flex items-center gap-2">
-                        {isLate && (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-amber-50 dark:bg-orange-900/40 border border-amber-200 dark:border-orange-500/40 text-[10px] font-bold text-amber-700 dark:text-orange-300 uppercase tracking-widest shadow-sm">
-                            TELAT {item.lateMinutes}m
-                          </span>
-                        )}
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest shadow-sm ${
-                          isComplete 
-                            ? 'bg-emerald-50 dark:bg-green-900/40 border border-emerald-200 dark:border-green-500/40 text-emerald-700 dark:text-green-300' 
-                            : 'bg-red-50 dark:bg-red-900/40 border border-red-200 dark:border-red-500/40 text-red-700 dark:text-red-300'
-                        }`}>
-                          {isComplete ? 'HADIR' : 'TIDAK LENGKAP'}
-                        </span>
-                      </div>
+                      <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                        {dateStr}
+                      </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Clock-in */}
-                      <div className="bg-slate-50 dark:bg-[rgba(255,255,255,0.02)] p-4 rounded-xl border border-slate-200 dark:border-white/5 flex flex-col justify-center">
-                        <p className="text-[10px] text-slate-500 dark:text-[#a0d4e4] uppercase font-bold tracking-widest mb-2 flex items-center gap-1.5 opacity-80">
-                          <LogIn className="h-3.5 w-3.5" />
-                          Clock-In
-                        </p>
-                        <p className="text-xl font-bold text-slate-900 dark:text-white mb-1">{timeIn} WIB</p>
-                        <p className="text-[10px] text-slate-500 dark:text-[rgba(255,255,255,0.6)] flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {item.officeLabel} ({item.distanceMeters.toFixed(0)}m)
-                        </p>
-                      </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {isLate ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
+                          Terlambat {item.lateMinutes} Menit
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 flex items-center gap-1">
+                          <Check className="h-3 w-3" />
+                          Tepat Waktu
+                        </span>
+                      )}
+                      
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        isComplete
+                          ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800/60'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}>
+                        {isComplete ? 'Selesai' : 'Sedang Berjalan'}
+                      </span>
+                    </div>
+                  </div>
 
-                      {/* Clock-out */}
-                      <div className="bg-slate-50 dark:bg-[rgba(255,255,255,0.02)] p-4 rounded-xl border border-slate-200 dark:border-white/5 flex flex-col justify-center">
-                        <p className="text-[10px] text-slate-500 dark:text-[#a0d4e4] uppercase font-bold tracking-widest mb-2 flex items-center gap-1.5 opacity-80">
-                          <LogOut className="h-3.5 w-3.5" />
-                          Clock-Out
-                        </p>
-                        <p className="text-xl font-bold text-slate-900 dark:text-white mb-1">{timeOut}{item.checkOutTime ? ' WIB' : ''}</p>
-                        <p className="text-[10px] text-slate-500 dark:text-[rgba(255,255,255,0.6)]">
-                          {item.checkOutTime ? 'Geofence terverifikasi' : 'Belum absen pulang'}
-                        </p>
-                      </div>
+                  {/* Jam Masuk vs Jam Pulang Grid */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+                      <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-1">
+                        <LogIn className="h-3.5 w-3.5 text-emerald-500" />
+                        <span>Jam Masuk</span>
+                      </p>
+                      <p className="text-base font-bold text-slate-900 dark:text-white">
+                        {timeIn} WIB
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {item.officeLabel || 'Klinik Sativa'} ({Math.round(item.distanceMeters || 0)}m)
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+                      <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mb-1">
+                        <LogOut className="h-3.5 w-3.5 text-sky-500" />
+                        <span>Jam Pulang</span>
+                      </p>
+                      <p className="text-base font-bold text-slate-900 dark:text-white">
+                        {timeOut ? `${timeOut} WIB` : '-'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {timeOut ? 'Presensi tuntas' : 'Belum checkout'}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -205,11 +243,13 @@ function HistoryContent() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-200 dark:border-white/10 py-6 text-center z-10 bg-white/60 dark:bg-transparent">
-        <p className="text-slate-500 dark:text-[#a0d4e4] text-[10px] font-bold tracking-widest uppercase">
-          &copy; SATIVA &bull; Privacy Preserved &bull; Geofence Active
+      <footer className="w-full border-t border-slate-200 dark:border-white/10 py-5 text-center z-10 bg-white/70 dark:bg-transparent">
+        <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium tracking-wide">
+          &copy; {new Date().getFullYear()} SATIVA &bull; Sistem Presensi & Evaluasi Iklim Tim Klinik Kecantikan
         </p>
       </footer>
+
+      <ScrollToTop />
     </div>
   );
 }

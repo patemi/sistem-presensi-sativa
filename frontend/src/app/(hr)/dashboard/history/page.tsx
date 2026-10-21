@@ -234,14 +234,14 @@ function HrHistoryContent() {
           </div>
 
           {/* Select Controls */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
             {/* Filter Divisi */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-600 dark:text-[#a0d4e4] uppercase tracking-wider">{t('hr.filter_division')}:</span>
+            <div className="flex items-center justify-between sm:justify-start gap-2">
+              <span className="text-[10px] font-bold text-slate-600 dark:text-[#a0d4e4] uppercase tracking-wider shrink-0">{t('hr.filter_division')}:</span>
               <select
                 value={selectedDivision}
                 onChange={(e) => setSelectedDivision(e.target.value)}
-                className="bg-white dark:bg-slate-900/90 border border-slate-300 dark:border-white/15 text-slate-900 dark:text-white text-xs font-semibold rounded-xl px-3 py-2 outline-none focus:border-sky-500 cursor-pointer"
+                className="w-full sm:w-auto bg-white dark:bg-slate-900/90 border border-slate-300 dark:border-white/15 text-slate-900 dark:text-white text-xs font-semibold rounded-xl px-3 py-2 outline-none focus:border-sky-500 cursor-pointer"
               >
                 <option value="all">{t('hr.all_divisions')}</option>
                 {divisionsList.map((d) => (
@@ -253,12 +253,12 @@ function HrHistoryContent() {
             </div>
 
             {/* Filter Periode Waktu */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-600 dark:text-[#a0d4e4] uppercase tracking-wider">{t('hr.filter_period')}:</span>
+            <div className="flex items-center justify-between sm:justify-start gap-2">
+              <span className="text-[10px] font-bold text-slate-600 dark:text-[#a0d4e4] uppercase tracking-wider shrink-0">{t('hr.filter_period')}:</span>
               <select
                 value={selectedPeriod}
                 onChange={(e) => setSelectedPeriod(e.target.value)}
-                className="bg-white dark:bg-slate-900/90 border border-slate-300 dark:border-white/15 text-slate-900 dark:text-white text-xs font-semibold rounded-xl px-3 py-2 outline-none focus:border-sky-500 cursor-pointer"
+                className="w-full sm:w-auto bg-white dark:bg-slate-900/90 border border-slate-300 dark:border-white/15 text-slate-900 dark:text-white text-xs font-semibold rounded-xl px-3 py-2 outline-none focus:border-sky-500 cursor-pointer"
               >
                 <option value="today">{t('hr.period_today')}</option>
                 <option value="month">{t('hr.period_month')}</option>
@@ -325,52 +325,113 @@ function HrHistoryContent() {
                   Tidak ada log presensi pada filter ini.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-[#a0d4e4] uppercase text-[9px] tracking-wider font-bold">
-                        <th className="pb-3 pr-4">Nama Karyawan</th>
-                        <th className="pb-3 px-4">Divisi</th>
-                        <th className="pb-3 px-4">Jam Check-in</th>
-                        <th className="pb-3 px-4">Jam Check-out</th>
-                        <th className="pb-3 px-4">Lokasi Kantor</th>
-                        <th className="pb-3 px-4">Jarak GPS</th>
-                        <th className="pb-3 pl-4">Status Presensi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                      {filteredPresentList.map((item: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
-                          <td className="py-3.5 pr-4 font-bold text-slate-900 dark:text-white">{item.fullName}</td>
-                          <td className="py-3.5 px-4 text-slate-600 dark:text-[#a0d4e4] font-medium">{item.divisionName}</td>
-                          <td className="py-3.5 px-4 text-slate-700 dark:text-white/80 font-mono">
-                            {new Date(item.checkInTime).toLocaleTimeString(locale === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
-                            {item.lateMinutes > 0 && (
-                              <span className="ml-2 text-[10px] text-amber-700 dark:text-yellow-400 font-bold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-yellow-900/30">
-                                +{item.lateMinutes}m
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4 text-slate-700 dark:text-white/80 font-mono">
-                            {item.checkOutTime
-                              ? new Date(item.checkOutTime).toLocaleTimeString(locale === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' })
-                              : '-'}
-                          </td>
-                          <td className="py-3.5 px-4 text-slate-600 dark:text-white/70">{item.officeLabel}</td>
-                          <td className="py-3.5 px-4 text-slate-600 dark:text-white/70 font-mono">{Math.round(item.distanceMeters)}m</td>
-                          <td className="py-3.5 pl-4">
-                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                              item.attendanceStatus === 'hadir'
-                                ? 'bg-emerald-50 dark:bg-green-900/30 text-emerald-700 dark:text-green-300 border-emerald-200 dark:border-green-500/30'
-                                : 'bg-amber-50 dark:bg-yellow-900/30 text-amber-700 dark:text-yellow-300 border-amber-200 dark:border-yellow-500/30'
-                            }`}>
-                              {item.attendanceStatus === 'hadir' ? 'Hadir Sah' : 'Belum Lengkap'}
+                <div>
+                  {/* Tampilan Mobile: Kartu Log Presensi Tanpa Perlu Digeser */}
+                  <div className="md:hidden space-y-3">
+                    {filteredPresentList.map((item: any, idx: number) => (
+                      <div
+                        key={`m-hist-${idx}`}
+                        className="p-4 rounded-2xl bg-white/80 dark:bg-slate-900/90 border border-slate-200 dark:border-white/10 shadow-sm space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                              {item.fullName}
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-[#a0d4e4] font-medium">
+                              {item.divisionName}
+                            </p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border shrink-0 ${
+                            item.attendanceStatus === 'hadir'
+                              ? 'bg-emerald-50 dark:bg-green-900/30 text-emerald-700 dark:text-green-300 border-emerald-200 dark:border-green-500/30'
+                              : 'bg-amber-50 dark:bg-yellow-900/30 text-amber-700 dark:text-yellow-300 border-amber-200 dark:border-yellow-500/30'
+                          }`}>
+                            {item.attendanceStatus === 'hadir' ? 'Hadir Sah' : 'Belum Lengkap'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-white/[0.03] p-2.5 rounded-xl border border-slate-100 dark:border-white/5">
+                          <div>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">Check-in</span>
+                            <div className="flex items-center gap-1 font-mono font-bold text-slate-800 dark:text-white">
+                              <span>{new Date(item.checkInTime).toLocaleTimeString(locale === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+                              {item.lateMinutes > 0 && (
+                                <span className="text-[10px] text-amber-700 dark:text-yellow-400 font-bold px-1 py-0.2 rounded bg-amber-50 dark:bg-yellow-900/30">
+                                  +{item.lateMinutes}m
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">Check-out</span>
+                            <span className="font-mono font-bold text-slate-800 dark:text-white">
+                              {item.checkOutTime
+                                ? new Date(item.checkOutTime).toLocaleTimeString(locale === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+                                : '-'}
                             </span>
-                          </td>
+                          </div>
+                          <div className="mt-1">
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">Lokasi Kantor</span>
+                            <span className="text-slate-700 dark:text-white/80 font-medium truncate block">{item.officeLabel}</span>
+                          </div>
+                          <div className="mt-1">
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">Jarak GPS</span>
+                            <span className="font-mono font-bold text-slate-800 dark:text-white">{Math.round(item.distanceMeters)}m</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Tampilan Desktop: Tabel Lengkap */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-[#a0d4e4] uppercase text-[9px] tracking-wider font-bold">
+                          <th className="pb-3 pr-4">Nama Karyawan</th>
+                          <th className="pb-3 px-4">Divisi</th>
+                          <th className="pb-3 px-4">Jam Check-in</th>
+                          <th className="pb-3 px-4">Jam Check-out</th>
+                          <th className="pb-3 px-4">Lokasi Kantor</th>
+                          <th className="pb-3 px-4">Jarak GPS</th>
+                          <th className="pb-3 pl-4">Status Presensi</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                        {filteredPresentList.map((item: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                            <td className="py-3.5 pr-4 font-bold text-slate-900 dark:text-white">{item.fullName}</td>
+                            <td className="py-3.5 px-4 text-slate-600 dark:text-[#a0d4e4] font-medium">{item.divisionName}</td>
+                            <td className="py-3.5 px-4 text-slate-700 dark:text-white/80 font-mono">
+                              {new Date(item.checkInTime).toLocaleTimeString(locale === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
+                              {item.lateMinutes > 0 && (
+                                <span className="ml-2 text-[10px] text-amber-700 dark:text-yellow-400 font-bold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-yellow-900/30">
+                                  +{item.lateMinutes}m
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-700 dark:text-white/80 font-mono">
+                              {item.checkOutTime
+                                ? new Date(item.checkOutTime).toLocaleTimeString(locale === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+                                : '-'}
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-600 dark:text-white/70">{item.officeLabel}</td>
+                            <td className="py-3.5 px-4 text-slate-600 dark:text-white/70 font-mono">{Math.round(item.distanceMeters)}m</td>
+                            <td className="py-3.5 pl-4">
+                              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+                                item.attendanceStatus === 'hadir'
+                                  ? 'bg-emerald-50 dark:bg-green-900/30 text-emerald-700 dark:text-green-300 border-emerald-200 dark:border-green-500/30'
+                                  : 'bg-amber-50 dark:bg-yellow-900/30 text-amber-700 dark:text-yellow-300 border-amber-200 dark:border-yellow-500/30'
+                              }`}>
+                                {item.attendanceStatus === 'hadir' ? 'Hadir Sah' : 'Belum Lengkap'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>
@@ -382,8 +443,78 @@ function HrHistoryContent() {
               <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 tracking-wider">
                 Rekap Analisis Iklim Psikologis & Korelasi Divisi
               </h3>
-              
-              <div className="overflow-x-auto">
+
+              {/* Tampilan Mobile: Kartu Analisis Psikologis Divisi Tanpa Geser */}
+              <div className="md:hidden space-y-3">
+                {correlationData.map((item: any) => (
+                  <div
+                    key={`m-div-corr-${item.divisionId}`}
+                    className="p-4 rounded-2xl bg-white/80 dark:bg-slate-900/90 border border-slate-200 dark:border-white/10 shadow-sm space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                          {item.divisionName}
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-[#a0d4e4]">
+                          {item.employeeCount} Anggota
+                        </p>
+                      </div>
+                      <div>
+                        {item.isRestricted ? (
+                          <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-500/30">
+                            🔒 Anonim (&lt;5 org)
+                          </span>
+                        ) : (
+                          <span className="text-xs font-extrabold text-slate-900 dark:text-white bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-lg">
+                            Mood: {item.avgMoodScore ? item.avgMoodScore.toFixed(2) : '-'} / 5.0
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-white/[0.03] p-2.5 rounded-xl border border-slate-100 dark:border-white/5">
+                      <div>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">Kehadiran Bulanan</span>
+                        <span className="font-mono font-bold text-slate-900 dark:text-white">{item.monthlyAttendanceRate}%</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">Keterlambatan</span>
+                        <span className="font-mono font-bold text-amber-600 dark:text-yellow-400">{item.tardinessRate}%</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold mb-1">Tema Utama Jurnal</p>
+                      {item.isRestricted ? (
+                        <span className="text-slate-400 dark:text-white/40 italic text-xs">Terlindungi</span>
+                      ) : Array.isArray(item.dominantThemes) && item.dominantThemes.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {item.dominantThemes.map((t: string, i: number) => (
+                            <span key={i} className="text-[9px] bg-slate-100 dark:bg-white/10 px-2 py-0.5 rounded text-sky-700 dark:text-[#a0d4e4] font-medium">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 dark:text-white/40 italic text-xs">Belum ada data</span>
+                      )}
+                    </div>
+
+                    {item.recommendation && (
+                      <div className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/5">
+                        <p className="text-[10px] text-slate-400 uppercase font-semibold mb-0.5">Rekomendasi Sistem</p>
+                        <p className="text-slate-700 dark:text-white/90 text-xs leading-relaxed">
+                          {item.recommendation}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Tampilan Desktop: Tabel Lengkap */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-[#a0d4e4] uppercase text-[9px] tracking-wider font-bold">

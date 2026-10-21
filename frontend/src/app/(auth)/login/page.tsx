@@ -24,24 +24,10 @@ function LoginContent() {
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
-    if (user) {
-      if (user.role === 'karyawan') {
-        router.push('/checkin');
-      } else if (user.role === 'hr') {
-        router.push('/dashboard');
-      } else if (user.role === 'owner') {
-        router.push('/owner-dashboard');
-      } else {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.reload();
-      }
-    }
-    
     if (searchParams.get('registered') === 'true') {
       setSuccessMsg(t('auth.register_success'));
     }
-  }, [user, router, searchParams, t]);
+  }, [searchParams, t]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,9 +47,9 @@ function LoginContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0b131d] text-slate-900 dark:text-slate-100 flex flex-col justify-center items-center px-4 font-sans relative transition-colors duration-200">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0b131d] text-slate-900 dark:text-slate-100 flex flex-col justify-center items-center py-10 px-4 font-sans relative transition-colors duration-200">
       {/* Top Action Controls: Theme Toggle & Language Switcher */}
-      <div className="absolute top-6 right-6 z-20 flex items-center gap-2.5">
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 flex items-center gap-2">
         <ThemeToggle />
         <SwitchLanguage />
       </div>
@@ -72,7 +58,7 @@ function LoginContent() {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="w-full max-w-md"
+        className="w-full max-w-md pt-8 sm:pt-0"
       >
         {/* Brand Header */}
         <div className="flex flex-col items-center mb-6 text-center">
@@ -158,6 +144,7 @@ function LoginContent() {
                   <Mail className="h-4 w-4" />
                 </span>
                 <input
+                  id="login-email-input"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -185,6 +172,7 @@ function LoginContent() {
                   {loginMode === 'invite' ? <KeyRound className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
                 </span>
                 <input
+                  id="login-password-input"
                   type={showPassword || loginMode === 'invite' ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -210,6 +198,7 @@ function LoginContent() {
 
             {/* Submit Button */}
             <button
+              id="login-submit-button"
               type="submit"
               disabled={loading}
               className={`w-full mt-2 text-white text-xs font-semibold py-3 flex items-center justify-center gap-2 rounded-xl disabled:opacity-50 transition-all ${

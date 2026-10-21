@@ -57,6 +57,6 @@ export function validateGeofence(
 
   return {
     distance: Math.round(distance * 100) / 100, // Round to 2 decimal places
-    isWithin: distance <= effectiveRadius,
+    isWithin: distance < effectiveRadius,
   };
 }
