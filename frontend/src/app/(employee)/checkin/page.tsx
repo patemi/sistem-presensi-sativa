@@ -12,16 +12,20 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import CheckoutAttendanceCard from '@/components/attendance/CheckoutAttendanceCard';
 import EmployeeScheduleView from '@/components/schedule/EmployeeScheduleView';
+import EditPasswordModal from '@/components/profile/EditPasswordModal';
+import FaceAttendanceModal, { CLINIC_LOCATION } from '@/components/attendance/FaceAttendanceModal';
 import { 
   Smile, Frown, Meh, SmilePlus, LogIn, 
   Send, Calendar, Clock, LogOut, CheckCircle, 
   Droplets, History, MapPin, ShieldAlert, Sparkles,
-  Lock, Check, ArrowRight, User, CalendarDays
+  Lock, Unlock, Check, ArrowRight, User, CalendarDays, KeyRound, ScanFace, ShieldCheck,
+  LayoutDashboard, ArrowLeft
 } from 'lucide-react';
 
 export default function CheckinPage() {
   return (
-    <AuthGuard allowedRoles={['karyawan']}>
+    // Catatan: HR dan Admin juga wajib melakukan presensi (tidak ada diskriminasi kewajiban absen)
+    <AuthGuard allowedRoles={['karyawan', 'hr', 'owner']}>
       <CheckinContent />
     </AuthGuard>
   );
@@ -32,8 +36,6 @@ function CheckinContent() {
   const { t } = useTranslation();
   const router = useRouter();
 
-  const [mood, setMood] = useState<number>(0);
-  const [journal, setJournal] = useState('');
   const [loading, setLoading] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(false);
   const [checkedOutToday, setCheckedOutToday] = useState(false);
@@ -43,18 +45,40 @@ function CheckinContent() {
   
   // Real-time live clock
   const [currentTime, setCurrentTime] = useState<string>('');
+  const [currentTimeRaw, setCurrentTimeRaw] = useState<Date>(new Date());
+
+  // Password Edit Modal
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+
+  // Biometric Face & Strict GPS Modal
+  const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
+  const [faceModalMode, setFaceModalMode] = useState<'checkin' | 'checkout'>('checkin');
+
+  // Shift & Target Check-out Locking State
+  const [targetCheckOut, setTargetCheckOut] = useState<string>('17:00');
+  const [targetCheckIn, setTargetCheckIn] = useState<string>('08:30');
+  const [canCheckout, setCanCheckout] = useState(false);
 
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
+      setCurrentTimeRaw(now);
       setCurrentTime(
         now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB'
       );
+
+      // Check if current time >= targetCheckOut
+      if (targetCheckOut) {
+        const [outH, outM] = targetCheckOut.split(':').map(Number);
+        const targetDate = new Date(now);
+        targetDate.setHours(outH || 17, outM || 0, 0, 0);
+        setCanCheckout(now.getTime() >= targetDate.getTime());
+      }
     };
     updateClock();
     const interval = setInterval(updateClock, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [targetCheckOut]);
 
   const todayStr = new Date().toLocaleDateString('id-ID', {
     weekday: 'long',
@@ -72,114 +96,85 @@ function CheckinContent() {
     return 'SELAMAT MALAM';
   };
 
-  useEffect(() => {
-    async function checkStatus() {
-      try {
-        const res = await api.get('/checkin/today-status');
-        const data = res.data;
-        if (data.hasCheckedIn) {
+  // Fetch Attendance status & shift schedule for today
+  const loadTodayAttendance = async () => {
+    try {
+      const res = await api.get('/attendance/today');
+      const data = res.data;
+      if (data?.attendance) {
+        if (data.attendance.check_in_time) {
           setCheckedInToday(true);
-          setCheckinInfo(data.checkin);
-          if (data.hasCheckedOut) {
+          setCheckinInfo({
+            submittedAt: data.attendance.check_in_time,
+            checkInTime: data.attendance.check_in_time,
+            checkOutTime: data.attendance.check_out_time,
+            officeLabel: CLINIC_LOCATION.name,
+            attendanceStatus: data.attendance.check_out_time ? 'hadir' : 'belum_lengkap',
+          });
+        }
+        if (data.attendance.check_out_time) {
+          setCheckedOutToday(true);
+        }
+      }
+
+      if (data?.shiftEnd) {
+        setTargetCheckOut(data.shiftEnd);
+      }
+      if (data?.shiftStart) {
+        setTargetCheckIn(data.shiftStart);
+      }
+      if (data?.isPastShiftEnd !== undefined) {
+        setCanCheckout(data.isPastShiftEnd);
+      }
+    } catch (err) {
+      console.warn('Gagal memuat status attendance, fallback ke checkin today-status', err);
+      try {
+        const fallback = await api.get('/checkin/today-status');
+        if (fallback.data?.hasCheckedIn) {
+          setCheckedInToday(true);
+          setCheckinInfo(fallback.data.checkin);
+          if (fallback.data.hasCheckedOut) {
             setCheckedOutToday(true);
           }
         }
-      } catch (err) {
-        console.error('Failed to load check-in status', err);
+      } catch (e) {
+        console.error('Failed to load check-in status', e);
       }
     }
-    checkStatus();
+  };
+
+  useEffect(() => {
+    loadTodayAttendance();
   }, []);
 
-  const getGeolocation = (): Promise<{ latitude: number; longitude: number }> => {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        resolve({ latitude: -6.2088, longitude: 106.8456 });
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-        },
-        () => {
-          resolve({ latitude: -7.5603728, longitude: 110.7666546 });
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-      );
-    });
+  const handleOpenFaceCheckIn = () => {
+    setFaceModalMode('checkin');
+    setIsFaceModalOpen(true);
   };
 
-  const handleCheckin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setErrorMsg('');
-
-    try {
-      const coords = await getGeolocation();
-      const res = await api.post('/checkin', {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-      });
-
-      setCheckedInToday(true);
-      setCheckinInfo({
-        submittedAt: res.data.checkInTime,
-        attendanceStatus: res.data.attendanceStatus,
-        officeLabel: res.data.officeLabel,
-        distanceMeters: res.data.distanceMeters,
-        lateMinutes: res.data.lateMinutes || 0,
-        checkOutTime: null,
-      });
-    } catch (err: any) {
-      setErrorMsg(err.response?.data?.message || err.message || 'Presensi masuk gagal. Pastikan izin lokasi aktif.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (mood === 0) {
-      setErrorMsg('Silakan pilih salah satu kondisi perasaan Anda hari ini sebelum pulang.');
+  const handleOpenFaceCheckOut = () => {
+    if (!canCheckout) {
+      alert(`Tombol absen pulang terkunci. Anda baru dapat melakukan presensi kepulangan setelah jam ${targetCheckOut} WIB.`);
       return;
     }
-
-    setLoading(true);
-    setErrorMsg('');
-
-    try {
-      const coords = await getGeolocation();
-      const res = await api.post('/checkin/checkout', {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        moodScore: mood,
-        noteText: journal,
-      });
-
-      setCheckedOutToday(true);
-      setCheckinInfo((prev: any) => ({
-        ...prev,
-        checkOutTime: res.data.checkOutTime,
-        attendanceStatus: res.data.attendanceStatus,
-        distanceMeters: res.data.distanceMeters,
-      }));
-    } catch (err: any) {
-      setErrorMsg(err.response?.data?.message || err.message || 'Presensi pulang gagal.');
-    } finally {
-      setLoading(false);
-    }
+    setFaceModalMode('checkout');
+    setIsFaceModalOpen(true);
   };
 
-  const moodOptions = [
-    { score: 1, icon: Frown, label: 'Lelah Berat', desc: 'Butuh istirahat', color: 'text-rose-500 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-700 ring-rose-400' },
-    { score: 2, icon: Frown, label: 'Kurang Baik', desc: 'Ada kendala', color: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 ring-amber-400' },
-    { score: 3, icon: Meh, label: 'Biasa Saja', desc: 'Cukup lancar', color: 'text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/60 border-sky-300 dark:border-sky-700 ring-sky-400' },
-    { score: 4, icon: Smile, label: 'Bersemangat', desc: 'Bekerja baik', color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 ring-emerald-400' },
-    { score: 5, icon: SmilePlus, label: 'Sangat Puas', desc: 'Hari produktif', color: 'text-teal-600 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border-teal-300 dark:border-teal-700 ring-teal-400' },
-  ];
+  const handleFaceSuccess = (result: any) => {
+    loadTodayAttendance();
+    if (faceModalMode === 'checkin') {
+      setCheckedInToday(true);
+      if (result?.target_check_out) {
+        setTargetCheckOut(result.target_check_out);
+      }
+      if (result?.can_checkout !== undefined) {
+        setCanCheckout(result.can_checkout);
+      }
+    } else {
+      setCheckedOutToday(true);
+    }
+  };
 
   const formatTime = (timeString: string | null) => {
     if (!timeString) return '-';
@@ -195,9 +190,22 @@ function CheckinContent() {
       {/* Modern Responsive Navbar */}
       <nav className="w-full bg-white/95 dark:bg-[#102636]/90 border-b border-slate-200 dark:border-white/10 shadow-sm sticky top-0 z-30 backdrop-blur-md transition-colors">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3">
-          {/* Logo Brand */}
-          <div className="flex items-center space-x-2.5">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+          {/* Logo Brand & Tombol Panah Kembali ke Dashboard */}
+          <div className="flex items-center space-x-2.5 sm:space-x-3">
+            {/* Tombol Panah Kembali ke Dashboard (Pojok Kiri Atas) */}
+            {(user?.role === 'hr' || user?.role === 'owner') && (
+              <button
+                type="button"
+                onClick={() => router.push(user.role === 'owner' ? '/owner-dashboard' : '/dashboard')}
+                className="h-9 w-9 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all shadow-sm hover:-translate-x-0.5 cursor-pointer shrink-0"
+                title="Kembali ke Dashboard"
+                aria-label="Kembali ke Dashboard"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            )}
+
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-sm shrink-0">
               <Droplets className="h-5 w-5" />
             </div>
             <div>
@@ -205,7 +213,7 @@ function CheckinContent() {
                 SATIVA
               </span>
               <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 block mt-0.5">
-                Klinik Kecantikan &bull; Portal Karyawan
+                Klinik Kecantikan &bull; Portal Presensi Biometrik
               </span>
             </div>
           </div>
@@ -238,26 +246,43 @@ function CheckinContent() {
 
       {/* Main Container */}
       <main className="w-full max-w-2xl mx-auto px-4 py-6 sm:py-10 z-10 flex-1 flex flex-col justify-center">
-        {/* User Badge Info Bar */}
-        <div className="mb-4 p-3 rounded-2xl bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3">
+        {/* User Badge Info Bar with Edit Password Button */}
+        <div className="mb-4 p-3 rounded-2xl bg-white dark:bg-[#111c27] border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="h-8 w-8 rounded-full bg-sky-100 dark:bg-sky-950/80 text-sky-600 dark:text-sky-300 font-bold text-xs flex items-center justify-center shrink-0 border border-sky-200 dark:border-sky-800">
+            <div className="h-9 w-9 rounded-full bg-sky-100 dark:bg-sky-950/80 text-sky-600 dark:text-sky-300 font-bold text-xs flex items-center justify-center shrink-0 border border-sky-200 dark:border-sky-800">
               <User className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                {user?.fullName}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  {user?.fullName}
+                </p>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                  {user?.role === 'hr' ? 'HR / Admin' : user?.role === 'owner' ? 'Owner' : 'Staf Klinik'}
+                </span>
+              </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                Staf Klinik &bull; {user?.email}
+                {user?.email}
               </p>
             </div>
           </div>
 
-          {/* Current Live Clock Badge */}
-          <div className="text-right shrink-0">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono text-xs font-bold text-slate-800 dark:text-sky-300">
-              <Clock className="h-3 w-3 text-sky-500 animate-spin" />
+          <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+
+            {/* Tombol Edit Password User */}
+            <button
+              type="button"
+              onClick={() => setIsPasswordModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 border border-amber-200 dark:border-amber-900/60 text-amber-700 dark:text-amber-400 font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+              title="Ubah kata sandi akun Anda"
+            >
+              <KeyRound className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Edit Password</span>
+            </button>
+
+            {/* Current Live Clock Badge */}
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono text-xs font-bold text-slate-800 dark:text-sky-300">
+              <Clock className="h-3.5 w-3.5 text-sky-500 animate-spin" />
               <span>{currentTime || '08:00 WIB'}</span>
             </span>
           </div>
@@ -296,186 +321,252 @@ function CheckinContent() {
         ) : (
           <AnimatePresence mode="wait">
             {checkedInToday ? (
-            checkedOutToday ? (
-              /* ========================================================
-                 STATE 3: PRESENSI SELESAI (SUDAH MASUK & SUDAH PULANG)
-                 ======================================================== */
-              <motion.div 
-                key="state3"
-                initial={{ opacity: 0, scale: 0.96, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: -15 }}
-                transition={{ duration: 0.3 }}
-                className="bg-white dark:bg-[#111c27] rounded-3xl p-6 sm:p-8 text-center shadow-lg border border-slate-200 dark:border-slate-800"
-              >
-                <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 mb-5 shadow-sm">
-                  <CheckCircle className="h-10 w-10" />
-                </div>
-                
-                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 inline-block mb-3">
-                  Shift Hari Ini Selesai &bull; Terverifikasi
-                </span>
+              checkedOutToday ? (
+                /* ========================================================
+                   STATE 3: PRESENSI SELESAI (SUDAH MASUK & SUDAH PULANG)
+                   ======================================================== */
+                <motion.div 
+                  key="state3"
+                  initial={{ opacity: 0, scale: 0.96, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: -15 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-white dark:bg-[#111c27] rounded-3xl p-6 sm:p-8 text-center shadow-lg border border-slate-200 dark:border-slate-800"
+                >
+                  <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 mb-5 shadow-sm">
+                    <CheckCircle className="h-10 w-10" />
+                  </div>
+                  
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 inline-block mb-3">
+                    Shift Hari Ini Selesai &bull; Terverifikasi
+                  </span>
 
-                <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white mb-2 tracking-tight">
-                  TERIMA KASIH ATAS KERJA KERASNYA!
-                </h1>
-                <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm leading-relaxed mb-6 max-w-md mx-auto">
-                  Presensi masuk dan pulang Anda hari ini telah tercatat rapi di sistem klinik Sativa. Selamat beristirahat!
-                </p>
+                  <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white mb-2 tracking-tight">
+                    TERIMA KASIH ATAS KERJA KERASNYA!
+                  </h1>
+                  <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm leading-relaxed mb-6 max-w-md mx-auto">
+                    Presensi masuk biometrik dan kepulangan Anda hari ini telah tercatat sah di sistem Orella Aesthetic Clinic. Selamat beristirahat!
+                  </p>
 
-                {/* Detail Kartu Presensi */}
-                <div className="bg-slate-50 dark:bg-slate-900/80 rounded-2xl p-5 mb-6 space-y-3 max-w-md mx-auto text-left border border-slate-200 dark:border-slate-800">
-                  <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200 dark:border-slate-800">
-                    <span className="text-slate-500 dark:text-slate-400 font-semibold">Tanggal Presensi:</span>
-                    <span className="font-bold text-slate-900 dark:text-white">{todayStr}</span>
+                  {/* Detail Kartu Presensi */}
+                  <div className="bg-slate-50 dark:bg-slate-900/80 rounded-2xl p-5 mb-6 space-y-3 max-w-md mx-auto text-left border border-slate-200 dark:border-slate-800">
+                    <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200 dark:border-slate-800">
+                      <span className="text-slate-500 dark:text-slate-400 font-semibold">Tanggal Presensi:</span>
+                      <span className="font-bold text-slate-900 dark:text-white">{todayStr}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200 dark:border-slate-800">
+                      <span className="text-slate-500 dark:text-slate-400 font-semibold">Lokasi Klinik:</span>
+                      <span className="text-slate-900 dark:text-white font-bold flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5 text-sky-500" />
+                        {CLINIC_LOCATION.name} (&lt; 1m)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div className="p-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-center">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mb-1">Jam Masuk</p>
+                        <p className="text-base font-bold text-slate-900 dark:text-emerald-400">
+                          {formatTime(checkinInfo?.submittedAt || checkinInfo?.checkInTime)}
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-center">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mb-1">Jam Pulang</p>
+                        <p className="text-base font-bold text-slate-900 dark:text-sky-400">
+                          {formatTime(checkinInfo?.checkOutTime)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-200 dark:border-slate-800">
-                    <span className="text-slate-500 dark:text-slate-400 font-semibold">Lokasi Klinik:</span>
-                    <span className="text-slate-900 dark:text-white font-bold flex items-center gap-1">
-                      <MapPin className="h-3.5 w-3.5 text-sky-500" />
-                      {checkinInfo?.officeLabel || 'Klinik Sativa Pusat'}
+                  <button
+                    type="button"
+                    onClick={() => router.push('/history')}
+                    className="w-full max-w-md mx-auto px-5 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md"
+                  >
+                    <History className="h-4 w-4" />
+                    <span>Buka Lembar Riwayat Presensi Lengkap</span>
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </button>
+                </motion.div>
+              ) : (
+                /* ========================================================
+                   STATE 2: SUDAH MASUK, TAMPILKAN STATUS DAN LOGIKA TOMBOL PULANG
+                   ======================================================== */
+                <motion.div 
+                  key="state2"
+                  initial={{ opacity: 0, scale: 0.96, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: -15 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-4"
+                >
+                  {/* Status Kehadiran Berhasil */}
+                  <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center justify-between text-xs shadow-sm">
+                    <div className="flex items-center gap-3 text-emerald-900 dark:text-emerald-200">
+                      <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                        <Check className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="font-extrabold text-sm text-emerald-800 dark:text-emerald-300">
+                          Kehadiran Berhasil
+                        </p>
+                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                          Tercatat jam masuk: <strong>{formatTime(checkinInfo?.submittedAt || checkinInfo?.checkInTime)}</strong>
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full font-bold bg-emerald-200/80 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-200 text-[10px]">
+                      Aktif Bekerja
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div className="p-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-center">
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mb-1">Jam Masuk</p>
-                      <p className="text-base font-bold text-slate-900 dark:text-emerald-400">
-                        {formatTime(checkinInfo?.submittedAt || checkinInfo?.checkInTime)}
-                      </p>
+                  {/* Info Jadwal & Kunci Tombol Absen Pulang */}
+                  <div className="bg-white dark:bg-[#111c27] rounded-3xl p-6 sm:p-7 shadow-lg border border-slate-200 dark:border-slate-800 text-center">
+                    <div className="flex items-center justify-center gap-2 mb-3">
+                      <div className={`p-2 rounded-xl ${canCheckout ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
+                        {canCheckout ? <Unlock className="w-6 h-6" /> : <Lock className="w-6 h-6" />}
+                      </div>
                     </div>
 
-                    <div className="p-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-center">
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mb-1">Jam Pulang</p>
-                      <p className="text-base font-bold text-slate-900 dark:text-sky-400">
-                        {formatTime(checkinInfo?.checkOutTime)}
-                      </p>
+                    <h2 className="text-xl font-extrabold text-slate-900 dark:text-white mb-1.5">
+                      {canCheckout ? 'Waktunya Presensi Pulang & Refleksi' : 'Presensi Pulang Belum Waktunya'}
+                    </h2>
+
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-5 leading-relaxed">
+                      {canCheckout ? (
+                        <>
+                          Waktu saat ini sudah mencapai atau melewati target selesai shift (<strong>{targetCheckOut} WIB</strong>). Silakan lakukan verifikasi wajah & bagikan unek-unek Anda.
+                        </>
+                      ) : (
+                        <>
+                          Tombol presensi pulang dikunci hingga jam kerja Anda selesai pada{' '}
+                          <strong className="text-slate-800 dark:text-slate-200">{targetCheckOut} WIB</strong>. Tombol akan aktif otomatis saat waktu tercapai.
+                        </>
+                      )}
+                    </p>
+
+                    <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 max-w-sm mx-auto mb-6 flex items-center justify-around text-xs">
+                      <div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Jam Masuk Target</p>
+                        <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{targetCheckIn} WIB</p>
+                      </div>
+                      <div className="h-6 w-px bg-slate-200 dark:bg-slate-700" />
+                      <div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Target Check-Out</p>
+                        <p className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{targetCheckOut} WIB</p>
+                      </div>
                     </div>
+
+                    {/* Tombol Absen Pulang (Terkunci jika now < target_check_out) */}
+                    <button
+                      type="button"
+                      onClick={handleOpenFaceCheckOut}
+                      disabled={!canCheckout}
+                      className={`w-full max-w-md mx-auto py-4 px-6 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        canCheckout
+                          ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white shadow-indigo-600/30'
+                          : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-300 dark:border-slate-700/60 shadow-none'
+                      }`}
+                    >
+                      {canCheckout ? (
+                        <>
+                          <ScanFace className="w-5 h-5" />
+                          <span>Verifikasi Wajah & Absen Pulang</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-4 h-4 text-slate-400" />
+                          <span>Terkunci hingga {targetCheckOut} WIB</span>
+                        </>
+                      )}
+                    </button>
                   </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => router.push('/history')}
-                  className="w-full max-w-md mx-auto px-5 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md"
-                >
-                  <History className="h-4 w-4" />
-                  <span>Buka Lembar Riwayat Presensi Lengkap</span>
-                  <ArrowRight className="h-4 w-4 ml-1" />
-                </button>
-              </motion.div>
+                </motion.div>
+              )
             ) : (
               /* ========================================================
-                 STATE 2: SUDAH MASUK, WAKTUNYA PRESENSI PULANG & EVALUASI
+                 STATE 1: FORM UTAMA (BELUM PRESENSI MASUK)
                  ======================================================== */
               <motion.div 
-                key="state2"
+                key="state1"
                 initial={{ opacity: 0, scale: 0.96, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.96, y: -15 }}
                 transition={{ duration: 0.3 }}
-                className="space-y-4"
+                className="bg-white dark:bg-[#111c27] rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-200 dark:border-slate-800"
               >
-                {/* Ringkasan Jam Masuk Hari Ini */}
-                <div className="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between text-xs shadow-sm">
-                  <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-200">
-                    <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>Jam Masuk Anda: <strong>{formatTime(checkinInfo?.submittedAt || checkinInfo?.checkInTime)}</strong></span>
+                {/* Header Info Selamat Datang */}
+                <div className="mb-6 text-center">
+                  <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-600 dark:text-sky-400 mb-4 shadow-sm">
+                    <Clock className="h-8 w-8" />
                   </div>
-                  <span className="font-semibold text-emerald-700 dark:text-emerald-300">Tercatat</span>
-                </div>
-
-                <CheckoutAttendanceCard 
-                  onCheckoutSuccess={() => {
-                    setCheckedOutToday(true);
-                    setCheckinInfo((prev: any) => ({
-                      ...prev,
-                      checkOutTime: new Date().toISOString(),
-                      attendanceStatus: 'hadir',
-                    }));
-                  }}
-                />
-              </motion.div>
-            )
-          ) : (
-            /* ========================================================
-               STATE 1: FORM UTAMA (BELUM PRESENSI MASUK)
-               ======================================================== */
-            <motion.div 
-              key="state1"
-              initial={{ opacity: 0, scale: 0.96, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: -15 }}
-              transition={{ duration: 0.3 }}
-              className="bg-white dark:bg-[#111c27] rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-200 dark:border-slate-800"
-            >
-              {/* Header Info Selamat Datang */}
-              <div className="mb-6 text-center">
-                <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-600 dark:text-sky-400 mb-4 shadow-sm">
-                  <Clock className="h-8 w-8" />
-                </div>
-                
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-1">
-                  {getGreeting()}
-                </h1>
-                <p className="text-sky-600 dark:text-sky-400 font-bold text-sm">
-                  {user?.fullName}
-                </p>
-                
-                <div className="flex items-center justify-center text-xs text-slate-500 dark:text-slate-400 mt-2">
-                  <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 px-3.5 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 font-medium">
-                    <Calendar className="h-3.5 w-3.5 text-sky-500" />
-                    <span>{todayStr}</span>
-                  </div>
-                </div>
-              </div>
-
-              {errorMsg && (
-                <div className="mb-6 flex items-start gap-2.5 p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/80 border border-rose-200 dark:border-rose-800/80 text-rose-700 dark:text-rose-300 text-xs font-medium">
-                  <ShieldAlert className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
-
-              {/* Status Lokasi & Geofence Box */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 mb-6 text-center space-y-2">
-                <div className="inline-flex p-2.5 rounded-xl bg-sky-100 dark:bg-sky-950 text-sky-600 dark:text-sky-400">
-                  <MapPin className="h-6 w-6" />
-                </div>
-                <h3 className="text-slate-900 dark:text-white font-bold text-sm">
-                  Verifikasi Lokasi Presensi Klinik
-                </h3>
-                <p className="text-slate-500 dark:text-slate-400 text-xs leading-relaxed max-w-sm mx-auto">
-                  Sistem otomatis memverifikasi GPS presensi Anda wajib berada di area Orella Aesthetic Clinic (radius ketat &lt; 2 meter). Pastikan Anda telah berada tepat di lokasi klinik.
-                </p>
-              </div>
-
-              {/* Tombol Presensi Masuk Utama */}
-              <form onSubmit={handleCheckin}>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-gradient-to-r from-sky-500 via-indigo-600 to-teal-500 hover:from-sky-400 hover:via-indigo-500 hover:to-teal-400 text-white font-extrabold text-sm sm:text-base rounded-2xl py-4 sm:py-5 shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none uppercase tracking-wider transition-all cursor-pointer"
-                >
-                  {loading ? (
-                    <div className="flex items-center gap-2">
-                      <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Memverifikasi GPS...</span>
+                  
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-1">
+                    {getGreeting()}
+                  </h1>
+                  <p className="text-sky-600 dark:text-sky-400 font-bold text-sm">
+                    {user?.fullName}
+                  </p>
+                  
+                  <div className="flex items-center justify-center text-xs text-slate-500 dark:text-slate-400 mt-2">
+                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 px-3.5 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 font-medium">
+                      <Calendar className="h-3.5 w-3.5 text-sky-500" />
+                      <span>{todayStr}</span>
                     </div>
-                  ) : (
-                    <>
-                      <LogIn className="h-5 w-5" />
-                      <span>Presensi Masuk Sekarang</span>
-                    </>
-                  )}
+                  </div>
+                </div>
+
+                {errorMsg && (
+                  <div className="mb-6 flex items-start gap-2.5 p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/80 border border-rose-200 dark:border-rose-800/80 text-rose-700 dark:text-rose-300 text-xs font-medium">
+                    <ShieldAlert className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
+                {/* Status Lokasi & Geofence Box */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 mb-6 text-center space-y-2">
+                  <div className="inline-flex p-2.5 rounded-xl bg-sky-100 dark:bg-sky-950 text-sky-600 dark:text-sky-400">
+                    <MapPin className="h-6 w-6" />
+                  </div>
+                  <h3 className="text-slate-900 dark:text-white font-bold text-sm">
+                    Verifikasi Biometrik Wajah & Lokasi Klinik Ketat
+                  </h3>
+                  <p className="text-slate-500 dark:text-slate-400 text-xs leading-relaxed max-w-sm mx-auto">
+                    Kamera akan mencocokkan wajah Anda menggunakan <strong>face-api.js</strong> dan memverifikasi posisi Anda di <strong>{CLINIC_LOCATION.name}</strong> (radius toleransi area gedung klinik &lt; 25 meter).
+                  </p>
+                </div>
+
+                {/* Tombol Presensi Masuk Biometrik Utama */}
+                <button
+                  type="button"
+                  onClick={handleOpenFaceCheckIn}
+                  className="w-full bg-gradient-to-r from-sky-500 via-indigo-600 to-teal-500 hover:from-sky-400 hover:via-indigo-500 hover:to-teal-400 text-white font-extrabold text-sm sm:text-base rounded-2xl py-4 sm:py-5 shadow-xl flex items-center justify-center gap-2 uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  <ScanFace className="h-5 w-5" />
+                  <span>Buka Kamera & Presensi Datang</span>
                 </button>
-              </form>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
         )}
       </main>
+
+      {/* Modal Edit Password */}
+      <EditPasswordModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+      />
+
+      {/* Modal Face Recognition & Strict GPS */}
+      <FaceAttendanceModal
+        isOpen={isFaceModalOpen}
+        onClose={() => setIsFaceModalOpen(false)}
+        mode={faceModalMode}
+        targetCheckOut={targetCheckOut}
+        onSuccess={handleFaceSuccess}
+      />
 
       {/* Footer */}
       <footer className="w-full border-t border-slate-200 dark:border-white/10 py-5 text-center z-10 bg-white/70 dark:bg-transparent">

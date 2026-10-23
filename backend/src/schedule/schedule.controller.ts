@@ -20,6 +20,25 @@ export class ScheduleController {
   constructor(private readonly scheduleService: ScheduleService) {}
 
   /**
+   * FITUR HR SETUP JADWAL SHIFT KARYAWAN:
+   * Endpoint POST /schedule
+   * HR menginput jadwal shift karyawan (target_check_in dan target_check_out)
+   */
+  @Post()
+  async createSchedule(
+    @Body()
+    dto: {
+      user_id: string;
+      date: string;
+      target_check_in?: string;
+      target_check_out?: string;
+      shift_type?: string;
+    },
+  ) {
+    return this.scheduleService.createSchedule(dto);
+  }
+
+  /**
    * FITUR HR SETUP JADWAL (NEST.JS):
    * Endpoint POST /schedule/bulk-create
    * Menerima array of object dari HR yang berisi user_id, date, dan shift_type

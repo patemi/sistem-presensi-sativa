@@ -1,8 +1,14 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { EmailService } from './email.service';
 import * as bcrypt from 'bcryptjs';
+import {
+  parseFaceDescriptor,
+  calculateEuclideanDistance,
+  calculateSimilarityPercent,
+  FACE_UNIQUENESS_MIN_DISTANCE,
+} from '../common/utils/biometric.util';
 
 @Injectable()
 export class AuthService {
@@ -415,7 +421,7 @@ export class AuthService {
    */
   async getEmployees(
     currentUserId: string,
-    query?: { status?: string; divisionId?: string; search?: string },
+    query?: { status?: string; divisionId?: string; search?: string; role?: string },
   ) {
     const currentUser = await this.prisma.user.findUnique({
       where: { id: currentUserId },
@@ -426,8 +432,11 @@ export class AuthService {
 
     const whereClause: any = {
       organizationId: currentUser.organizationId,
-      role: 'karyawan',
     };
+
+    if (query?.role && query.role !== 'all') {
+      whereClause.role = query.role;
+    }
 
     if (query?.status && query.status !== 'all') {
       whereClause.inviteStatus = query.status;
@@ -458,22 +467,24 @@ export class AuthService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Statistik seluruh karyawan di organisasi
+    // Statistik seluruh anggota di organisasi
     const allOrgEmployees = await this.prisma.user.findMany({
       where: {
         organizationId: currentUser.organizationId,
-        role: 'karyawan',
       },
       select: {
         inviteStatus: true,
+        role: true,
+        faceDescriptor: true,
       },
     });
 
     const stats = {
       total: allOrgEmployees.length,
-      joined: allOrgEmployees.filter((e) => e.inviteStatus === 'joined').length,
+      joined: allOrgEmployees.filter((e) => e.inviteStatus === 'joined' || e.role === 'hr' || e.role === 'owner').length,
       sent: allOrgEmployees.filter((e) => e.inviteStatus === 'sent').length,
       pending: allOrgEmployees.filter((e) => e.inviteStatus === 'pending').length,
+      withFace: allOrgEmployees.filter((e) => Boolean(e.faceDescriptor)).length,
     };
 
     return {
@@ -482,6 +493,8 @@ export class AuthService {
         id: emp.id,
         fullName: emp.fullName,
         email: emp.email,
+        role: emp.role,
+        hasFaceDescriptor: Boolean(emp.faceDescriptor),
         divisionId: emp.divisionId,
         divisionName: emp.division?.name || 'Tanpa Divisi',
         division: emp.division ? { id: emp.division.id, name: emp.division.name } : null,
@@ -604,7 +617,7 @@ export class AuthService {
   }
 
   /**
-   * Get divisions for current organization
+   * Get divisions for current organization with user counts, staff list, and minimum quota validation
    */
   async getDivisions(currentUserId: string) {
     const currentUser = await this.prisma.user.findUnique({
@@ -614,10 +627,402 @@ export class AuthService {
       throw new BadRequestException('Pengguna tidak ditemukan');
     }
 
-    return this.prisma.division.findMany({
+    const divisions = await this.prisma.division.findMany({
       where: { organizationId: currentUser.organizationId },
+      include: {
+        _count: {
+          select: { users: true },
+        },
+        users: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+            faceDescriptor: true,
+          },
+          orderBy: { fullName: 'asc' },
+        },
+      },
       orderBy: { name: 'asc' },
     });
+
+    return divisions.map((d) => ({
+      id: d.id,
+      name: d.name,
+      userCount: d._count.users,
+      users: d.users.map((u) => ({
+        id: u.id,
+        fullName: u.fullName,
+        email: u.email,
+        role: u.role,
+        hasFace: Boolean(u.faceDescriptor),
+      })),
+      hasMinimumEmployees: d._count.users >= 1,
+    }));
+  }
+
+  /**
+   * Edit / update division name
+   */
+  async updateDivision(currentUserId: string, divisionId: string, name: string) {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: currentUserId },
+    });
+    if (!currentUser) {
+      throw new BadRequestException('Pengguna tidak ditemukan');
+    }
+
+    const trimmedName = name?.trim();
+    if (!trimmedName) {
+      throw new BadRequestException('Nama divisi tidak boleh kosong');
+    }
+
+    const division = await this.prisma.division.findUnique({
+      where: { id: divisionId },
+    });
+    if (!division || division.organizationId !== currentUser.organizationId) {
+      throw new NotFoundException('Divisi tidak ditemukan');
+    }
+
+    const duplicate = await this.prisma.division.findFirst({
+      where: {
+        organizationId: currentUser.organizationId,
+        name: trimmedName,
+        id: { not: divisionId },
+      },
+    });
+    if (duplicate) {
+      throw new BadRequestException(`Divisi dengan nama "${trimmedName}" sudah ada`);
+    }
+
+    const updated = await this.prisma.division.update({
+      where: { id: divisionId },
+      data: { name: trimmedName },
+    });
+
+    return {
+      success: true,
+      message: `Nama divisi berhasil diperbarui menjadi "${updated.name}"`,
+      division: updated,
+    };
+  }
+
+  /**
+   * Delete division with safeguard: Cannot delete if it still has employees assigned
+   */
+  async deleteDivision(currentUserId: string, divisionId: string) {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: currentUserId },
+    });
+    if (!currentUser) {
+      throw new BadRequestException('Pengguna tidak ditemukan');
+    }
+
+    const division = await this.prisma.division.findUnique({
+      where: { id: divisionId },
+      include: {
+        _count: {
+          select: { users: true },
+        },
+      },
+    });
+    if (!division || division.organizationId !== currentUser.organizationId) {
+      throw new NotFoundException('Divisi tidak ditemukan');
+    }
+
+    // Validasi kuota karyawan: Tidak boleh menghapus divisi yang masih memiliki karyawan
+    if (division._count.users > 0) {
+      throw new BadRequestException(
+        `Divisi "${division.name}" tidak dapat dihapus karena masih menaungi ${division._count.users} karyawan. Harap pindahkan karyawan ke divisi lain terlebih dahulu.`
+      );
+    }
+
+    // Bersihkan relasi wellbeing jika ada
+    await this.prisma.wellbeingFeedback.deleteMany({
+      where: { divisionId },
+    });
+    await this.prisma.divisionWellbeingInsight.deleteMany({
+      where: { divisionId },
+    });
+
+    await this.prisma.division.delete({
+      where: { id: divisionId },
+    });
+
+    return {
+      success: true,
+      message: `Divisi "${division.name}" berhasil dihapus`,
+    };
+  }
+
+  /**
+   * Reassign / update employee division
+   */
+  async updateUserDivision(currentUserId: string, targetUserId: string, divisionId: string | null) {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: currentUserId },
+    });
+    if (!currentUser) {
+      throw new BadRequestException('Pengguna tidak ditemukan');
+    }
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+    if (!targetUser || targetUser.organizationId !== currentUser.organizationId) {
+      throw new NotFoundException('Karyawan tidak ditemukan');
+    }
+
+    if (divisionId) {
+      const division = await this.prisma.division.findUnique({
+        where: { id: divisionId },
+      });
+      if (!division || division.organizationId !== currentUser.organizationId) {
+        throw new BadRequestException('Divisi target tidak valid');
+      }
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: targetUserId },
+      data: { divisionId },
+      include: { division: true },
+    });
+
+    return {
+      success: true,
+      message: `Divisi karyawan "${updated.fullName}" berhasil diubah menjadi "${updated.division?.name || 'Tanpa Divisi'}"`,
+      user: {
+        id: updated.id,
+        fullName: updated.fullName,
+        divisionId: updated.divisionId,
+        divisionName: updated.division?.name || 'Tanpa Divisi',
+      },
+    };
+  }
+
+  /**
+   * Delete an employee
+   */
+  async deleteEmployee(currentUserId: string, employeeId: string) {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: currentUserId },
+    });
+    if (!currentUser) {
+      throw new BadRequestException('Pengguna tidak ditemukan');
+    }
+
+    if (employeeId === currentUserId) {
+      throw new BadRequestException('Anda tidak dapat menghapus akun Anda sendiri');
+    }
+
+    const employee = await this.prisma.user.findUnique({
+      where: { id: employeeId },
+    });
+    if (!employee || employee.organizationId !== currentUser.organizationId) {
+      throw new NotFoundException('Karyawan tidak ditemukan');
+    }
+
+    // Bersihkan swap request yang menargetkan employee ini
+    await this.prisma.shiftSwapRequest.deleteMany({
+      where: {
+        OR: [
+          { requesterId: employeeId },
+          { targetUserId: employeeId },
+        ],
+      },
+    });
+
+    await this.prisma.user.delete({
+      where: { id: employeeId },
+    });
+
+    return {
+      success: true,
+      message: `Karyawan "${employee.fullName}" berhasil dihapus`,
+    };
+  }
+
+  /**
+   * Dedicated change password method
+   */
+  async changePassword(userId: string, dto: { currentPassword?: string; newPassword: string }) {
+    if (!dto.newPassword || dto.newPassword.trim().length < 6) {
+      throw new BadRequestException('Password baru minimal 6 karakter');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Pengguna tidak ditemukan');
+    }
+
+    if (dto.currentPassword) {
+      const isValid = bcrypt.compareSync(dto.currentPassword, user.passwordHash);
+      if (!isValid) {
+        throw new BadRequestException('Password lama Anda salah');
+      }
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: bcrypt.hashSync(dto.newPassword, 10),
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Password berhasil diubah. Silakan gunakan password baru ini untuk login berikutnya.',
+    };
+  }
+
+  /**
+   * Save / update face descriptor (stringified float array from face-api.js)
+   * Aturan: Pendaftaran hanya bisa dilakukan 1x saat pertama kali login.
+   * Setelah terdaftar, karyawan dilarang mengubah sendiri kecuali di-reset oleh HR/Admin.
+   */
+  async updateFaceDescriptor(
+    userId: string,
+    faceDescriptor: string,
+    requester?: { id: string; role: string },
+  ) {
+    if (!faceDescriptor) {
+      throw new BadRequestException('Face descriptor tidak boleh kosong');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Pengguna tidak ditemukan');
+    }
+
+    // CEK ATURAN 1: Pendaftaran wajah hanya boleh dilakukan saat pertama kali login (faceDescriptor masih null).
+    // Siapapun (baik staf, HR, maupun Admin) dilarang menimpa master wajah yang sudah tersimpan tanpa melalui proses 'Reset Wajah' terlebih dahulu.
+    if (user.faceDescriptor) {
+      throw new BadRequestException(
+        'Master biometrik wajah sudah terdaftar dan terkunci! Pendaftaran wajah hanya dilakukan satu kali saat pertama kali login. Untuk mendaftarkan ulang wajah, silakan gunakan fitur "Reset Wajah" di dashboard Admin/HR terlebih dahulu.',
+      );
+    }
+
+    // 1. Validasi struktur vektor biometrik 128-d
+    let parsedVector: number[];
+    try {
+      parsedVector = parseFaceDescriptor(faceDescriptor);
+    } catch (err: any) {
+      throw new BadRequestException(err.message || 'Format vektor biometrik wajah tidak valid.');
+    }
+
+    // 2. CEK KEUNIKAN WAJAH: Satu wajah hanya boleh untuk 1 karyawan (Anti-Joki & Anti-Duplikasi)
+    // Query seluruh karyawan lain yang sudah mendaftarkan master wajah
+    const otherUsersWithFace = await this.prisma.user.findMany({
+      where: {
+        id: { not: userId },
+        faceDescriptor: { not: null },
+      },
+      select: {
+        id: true,
+        fullName: true,
+        role: true,
+        faceDescriptor: true,
+      },
+    });
+
+    for (const other of otherUsersWithFace) {
+      if (!other.faceDescriptor) continue;
+      try {
+        const otherVector = parseFaceDescriptor(other.faceDescriptor);
+        const distance = calculateEuclideanDistance(parsedVector, otherVector);
+        
+        // Jarak < 0.48 berarti wajah identik / orang yang sama (kemiripan > 80%)
+        if (distance < FACE_UNIQUENESS_MIN_DISTANCE) {
+          const similarity = calculateSimilarityPercent(distance);
+          throw new BadRequestException(
+            `Registrasi Wajah Ditolak: Wajah ini terdeteksi identik/sangat mirip (${similarity}% kemiripan biometrik) dengan karyawan lain atas nama "${other.fullName}" (${other.role}). Satu wajah fisik hanya boleh didaftarkan untuk 1 akun karyawan demi mencegah kecurangan / joki presensi.`
+          );
+        }
+      } catch (err: any) {
+        // Jika error adalah BadRequestException penolakan duplikasi, teruskan
+        if (err instanceof BadRequestException) {
+          throw err;
+        }
+        // Jika descriptor user lama corrupt, lanjutkan pengecekan
+      }
+    }
+
+    // 3. Simpan vektor master wajah yang sudah terverifikasi unik & sah
+    const serialized = JSON.stringify(parsedVector);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { faceDescriptor: serialized },
+    });
+
+    return {
+      success: true,
+      message: 'Master wajah (Face Descriptor) berhasil diverifikasi unik dan didaftarkan!',
+    };
+  }
+
+  /**
+   * Get face descriptor for a user
+   */
+  async getFaceDescriptor(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        fullName: true,
+        faceDescriptor: true,
+        role: true,
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Pengguna tidak ditemukan');
+    }
+
+    return {
+      hasFaceDescriptor: !!user.faceDescriptor,
+      faceDescriptor: user.faceDescriptor,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        role: user.role,
+      },
+    };
+  }
+
+  /**
+   * Reset data master biometrik wajah pengguna (karyawan, HR, atau Admin)
+   * Hanya dapat dilakukan oleh HR/Owner, atau pengguna sendiri jika dia HR/Admin
+   */
+  async resetFaceDescriptor(targetUserId: string, requester: { id: string; role: string }) {
+    const isPrivileged = requester.role === 'hr' || requester.role === 'owner';
+    const isSelf = requester.id === targetUserId;
+
+    if (!isPrivileged && !isSelf) {
+      throw new UnauthorizedException('Hanya HR dan Administrator yang memiliki wewenang untuk mereset master wajah.');
+    }
+
+    const targetUser = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!targetUser) {
+      throw new BadRequestException('Pengguna tidak ditemukan');
+    }
+
+    await this.prisma.user.update({
+      where: { id: targetUserId },
+      data: { faceDescriptor: null },
+    });
+
+    return {
+      success: true,
+      message: `Master biometrik wajah untuk "${targetUser.fullName}" (${targetUser.role}) berhasil di-reset. Pengguna wajib mendaftarkan master wajah baru saat presensi/login berikutnya.`,
+      user: {
+        id: targetUser.id,
+        fullName: targetUser.fullName,
+        role: targetUser.role,
+        hasFaceDescriptor: false,
+      },
+    };
   }
 }
+
 

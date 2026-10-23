@@ -15,17 +15,33 @@ var ShiftType;
 (function (ShiftType) {
     ShiftType["PAGI"] = "PAGI";
     ShiftType["SIANG"] = "SIANG";
+    ShiftType["LONG"] = "LONG";
+    ShiftType["OFF"] = "OFF";
 })(ShiftType || (exports.ShiftType = ShiftType = {}));
 exports.SHIFT_DETAILS = {
     [ShiftType.PAGI]: {
+        code: 'P',
         start: '08:30',
         end: '17:00',
         label: 'Shift Pagi (08:30 - 17:00)',
     },
     [ShiftType.SIANG]: {
+        code: 'S',
         start: '10:30',
         end: '19:00',
         label: 'Shift Siang (10:30 - 19:00)',
+    },
+    [ShiftType.LONG]: {
+        code: 'LONG',
+        start: '08:30',
+        end: '20:00',
+        label: 'Long Shift Full (08:30 - 20:00 / Closing)',
+    },
+    [ShiftType.OFF]: {
+        code: 'OFF',
+        start: '-',
+        end: '-',
+        label: 'Libur (OFF)',
     },
 };
 let Schedule = class Schedule {
@@ -33,6 +49,8 @@ let Schedule = class Schedule {
     user_id;
     date;
     shift_type;
+    target_check_in;
+    target_check_out;
     created_at;
     updated_at;
 };
@@ -54,10 +72,29 @@ __decorate([
         name: 'shift_type',
         type: 'varchar',
         length: 20,
+        nullable: true,
         default: ShiftType.PAGI,
     }),
     __metadata("design:type", String)
 ], Schedule.prototype, "shift_type", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        name: 'target_check_in',
+        type: 'varchar',
+        length: 10,
+        default: '08:30',
+    }),
+    __metadata("design:type", String)
+], Schedule.prototype, "target_check_in", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        name: 'target_check_out',
+        type: 'varchar',
+        length: 10,
+        default: '17:00',
+    }),
+    __metadata("design:type", String)
+], Schedule.prototype, "target_check_out", void 0);
 __decorate([
     (0, typeorm_1.CreateDateColumn)({ name: 'created_at' }),
     __metadata("design:type", Date)

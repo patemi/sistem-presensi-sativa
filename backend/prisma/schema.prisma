@@ -77,6 +77,7 @@ model User {
   inviteStatus   String       @default("pending") @map("invite_status") // 'pending' | 'sent' | 'joined'
   invitedAt      DateTime?    @map("invited_at")
   lastLoginAt    DateTime?    @map("last_login_at")
+  faceDescriptor String?      @map("face_descriptor") // array data master wajah dari face-api.js
 
   attendanceCheckins  AttendanceCheckin[]
   attendanceCheckouts AttendanceCheckout[]
@@ -202,13 +203,15 @@ model LeaveRequest {
 // ============================================
 
 model Schedule {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  date      String   // 'YYYY-MM-DD'
-  shiftType String   @map("shift_type") // 'PAGI' (08:30-17:00) | 'SIANG' (10:30-19:00)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date           String   // 'YYYY-MM-DD'
+  targetCheckIn  String   @default("08:30") @map("target_check_in") // '08:30'
+  targetCheckOut String   @default("17:00") @map("target_check_out") // '17:00'
+  shiftType      String?  @map("shift_type") // 'PAGI' (08:30-17:00) | 'SIANG' (10:30-19:00)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@unique([userId, date])
   @@map("schedules")

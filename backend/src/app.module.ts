@@ -14,6 +14,7 @@ import { LeaveModule } from './leave/leave.module';
 
 import * as path from 'path';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { User } from './auth/entities/user.entity';
 import { Schedule } from './schedule/entities/schedule.entity';
 import { ShiftSwapRequest } from './schedule/entities/shift-swap-request.entity';
 import { Attendance } from './attendance/entities/attendance.entity';
@@ -28,7 +29,7 @@ import { AttendanceModule } from './attendance/attendance.module';
     TypeOrmModule.forRoot({
       type: 'better-sqlite3',
       database: path.resolve(process.cwd(), 'prisma/dev.db'),
-      entities: [Schedule, ShiftSwapRequest, Attendance],
+      entities: [User, Schedule, ShiftSwapRequest, Attendance],
       synchronize: false,
     }),
     MailerModule.forRootAsync({

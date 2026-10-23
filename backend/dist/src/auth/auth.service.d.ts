@@ -39,6 +39,7 @@ export declare class AuthService {
         inviteStatus: string;
         invitedAt: Date | null;
         lastLoginAt: Date | null;
+        faceDescriptor: string | null;
         divisionId: string | null;
     }>;
     validateInviteCode(code: string): Promise<{
@@ -79,6 +80,7 @@ export declare class AuthService {
         inviteStatus: string;
         invitedAt: Date | null;
         lastLoginAt: Date | null;
+        faceDescriptor: string | null;
         divisionId: string | null;
     }>;
     addAdmin(currentUserId: string, data: {
@@ -99,6 +101,7 @@ export declare class AuthService {
         inviteStatus: string;
         invitedAt: Date | null;
         lastLoginAt: Date | null;
+        faceDescriptor: string | null;
         divisionId: string | null;
     }>;
     private generateUniqueInviteCode;
@@ -154,17 +157,21 @@ export declare class AuthService {
         status?: string;
         divisionId?: string;
         search?: string;
+        role?: string;
     }): Promise<{
         stats: {
             total: number;
             joined: number;
             sent: number;
             pending: number;
+            withFace: number;
         };
         employees: {
             id: string;
             fullName: string;
             email: string;
+            role: string;
+            hasFaceDescriptor: boolean;
             divisionId: string | null;
             divisionName: string;
             division: {
@@ -202,6 +209,77 @@ export declare class AuthService {
     getDivisions(currentUserId: string): Promise<{
         id: string;
         name: string;
-        organizationId: string;
+        userCount: number;
+        users: {
+            id: string;
+            fullName: string;
+            email: string;
+            role: string;
+            hasFace: boolean;
+        }[];
+        hasMinimumEmployees: boolean;
     }[]>;
+    updateDivision(currentUserId: string, divisionId: string, name: string): Promise<{
+        success: boolean;
+        message: string;
+        division: {
+            id: string;
+            name: string;
+            organizationId: string;
+        };
+    }>;
+    deleteDivision(currentUserId: string, divisionId: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    updateUserDivision(currentUserId: string, targetUserId: string, divisionId: string | null): Promise<{
+        success: boolean;
+        message: string;
+        user: {
+            id: string;
+            fullName: string;
+            divisionId: string | null;
+            divisionName: string;
+        };
+    }>;
+    deleteEmployee(currentUserId: string, employeeId: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    changePassword(userId: string, dto: {
+        currentPassword?: string;
+        newPassword: string;
+    }): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    updateFaceDescriptor(userId: string, faceDescriptor: string, requester?: {
+        id: string;
+        role: string;
+    }): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    getFaceDescriptor(userId: string): Promise<{
+        hasFaceDescriptor: boolean;
+        faceDescriptor: string | null;
+        user: {
+            id: string;
+            fullName: string;
+            role: string;
+        };
+    }>;
+    resetFaceDescriptor(targetUserId: string, requester: {
+        id: string;
+        role: string;
+    }): Promise<{
+        success: boolean;
+        message: string;
+        user: {
+            id: string;
+            fullName: string;
+            role: string;
+            hasFaceDescriptor: boolean;
+        };
+    }>;
 }

@@ -8,12 +8,15 @@ import {
   CheckCircle2, FileSpreadsheet, ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import HRDynamicScheduleInput from './HRDynamicScheduleInput';
+import ClinicScheduleMatrix from './ClinicScheduleMatrix';
 
 interface ScheduleItem {
   id: string;
   user_id: string;
   date: string;
-  shift_type: 'PAGI' | 'SIANG';
+  shift_type: 'PAGI' | 'SIANG' | 'LONG' | 'OFF';
+  shift_code?: string;
   shift_start: string;
   shift_end: string;
   shift_label: string;
@@ -44,7 +47,7 @@ export default function AdminScheduleManagement() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterMonth, setFilterMonth] = useState('2026-10');
-  const [activeTab, setActiveTab] = useState<'calendar' | 'bulk_setup' | 'swaps'>('calendar');
+  const [activeTab, setActiveTab] = useState<'matrix' | 'calendar' | 'single_setup' | 'bulk_setup' | 'swaps'>('matrix');
 
   // Bulk Generator State
   const [selectedUserId, setSelectedUserId] = useState('all');
@@ -230,10 +233,25 @@ export default function AdminScheduleManagement() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+      <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('matrix')}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            activeTab === 'matrix'
+              ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-md shadow-sky-600/20'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <FileSpreadsheet className="h-3.5 w-3.5 text-amber-300" />
+          <span>Matriks Shift Klinik (Excel View)</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-amber-400 text-amber-950 font-black">
+            P, S, LONG, OFF
+          </span>
+        </button>
+
         <button
           onClick={() => setActiveTab('calendar')}
-          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
             activeTab === 'calendar'
               ? 'bg-sky-600 text-white shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -244,7 +262,7 @@ export default function AdminScheduleManagement() {
 
         <button
           onClick={() => setActiveTab('swaps')}
-          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeTab === 'swaps'
               ? 'bg-sky-600 text-white shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -260,15 +278,27 @@ export default function AdminScheduleManagement() {
         </button>
 
         <button
+          onClick={() => setActiveTab('single_setup')}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            activeTab === 'single_setup'
+              ? 'bg-sky-600 text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Clock className="h-3.5 w-3.5" />
+          <span>Input Jadwal Dinamis (POST /schedule)</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('bulk_setup')}
-          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeTab === 'bulk_setup'
               ? 'bg-sky-600 text-white shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          <FileSpreadsheet className="h-3.5 w-3.5" />
-          <span>Setup Jadwal 1 Bulan (HR Generator)</span>
+          <Plus className="h-3.5 w-3.5" />
+          <span>Generator Otomatis 1 Bulan</span>
         </button>
       </div>
 
@@ -283,6 +313,11 @@ export default function AdminScheduleManagement() {
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>{approvalAlert.text}</span>
         </div>
+      )}
+
+      {/* Tab 0: Matriks Shift Klinik (Excel View - Sesuai Jadwal Asli Klinik) */}
+      {activeTab === 'matrix' && (
+        <ClinicScheduleMatrix onSaved={fetchData} />
       )}
 
       {/* Tab 1: Daftar Jadwal */}
@@ -340,12 +375,22 @@ export default function AdminScheduleManagement() {
                       <td className="py-3 px-4 whitespace-nowrap">
                         <span
                           className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${
-                            sch.shift_type === 'SIANG'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                            sch.shift_type === 'OFF'
+                              ? 'bg-rose-500 text-white border border-rose-600'
+                              : sch.shift_type === 'LONG'
+                              ? 'bg-amber-400 text-amber-950 font-black border border-amber-500'
+                              : sch.shift_type === 'SIANG'
+                              ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800'
+                              : 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-300 dark:border-sky-800'
                           }`}
                         >
-                          {sch.shift_type === 'SIANG' ? 'SIANG (10:30-19:00)' : 'PAGI (08:30-17:00)'}
+                          {sch.shift_type === 'OFF'
+                            ? 'OFF (LIBUR)'
+                            : sch.shift_type === 'LONG'
+                            ? 'LONG (08:30-20:00)'
+                            : sch.shift_type === 'SIANG'
+                            ? 'SIANG (10:30-19:00)'
+                            : 'PAGI (08:30-17:00)'}
                         </span>
                       </td>
                       <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
@@ -457,6 +502,13 @@ export default function AdminScheduleManagement() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab: Input Jadwal Dinamis (POST /schedule) */}
+      {activeTab === 'single_setup' && (
+        <div className="max-w-2xl mx-auto">
+          <HRDynamicScheduleInput onScheduleCreated={fetchData} />
         </div>
       )}
 

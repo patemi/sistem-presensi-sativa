@@ -23,6 +23,9 @@ let ScheduleController = class ScheduleController {
     constructor(scheduleService) {
         this.scheduleService = scheduleService;
     }
+    async createSchedule(dto) {
+        return this.scheduleService.createSchedule(dto);
+    }
     async bulkCreate(payload) {
         return this.scheduleService.bulkCreate(payload);
     }
@@ -48,6 +51,13 @@ let ScheduleController = class ScheduleController {
     }
 };
 exports.ScheduleController = ScheduleController;
+__decorate([
+    (0, common_1.Post)(),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], ScheduleController.prototype, "createSchedule", null);
 __decorate([
     (0, common_1.Post)('bulk-create'),
     __param(0, (0, common_1.Body)()),

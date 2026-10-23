@@ -1,1 +1,1 @@
-{"version":3,"file":"checkout-attendance.dto.js","sourceRoot":"","sources":["../../../../src/attendance/dto/checkout-attendance.dto.ts"],"names":[],"mappings":";;;AAAA,MAAa,qBAAqB;IAChC,cAAc,CAAU;IACxB,iBAAiB,CAAS;CAC3B;AAHD,sDAGC"}
+{"version":3,"file":"checkout-attendance.dto.js","sourceRoot":"","sources":["../../../../src/attendance/dto/checkout-attendance.dto.ts"],"names":[],"mappings":";;;AAAA,MAAa,qBAAqB;IAChC,cAAc,CAAU;IACxB,iBAAiB,CAAS;IAC1B,QAAQ,CAAU;IAClB,SAAS,CAAU;IACnB,aAAa,CAAW;IACxB,eAAe,CAAqB;CACrC;AAPD,sDAOC"}

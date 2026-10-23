@@ -14,7 +14,7 @@ interface ScheduleItem {
   id: string;
   user_id: string;
   date: string;
-  shift_type: 'PAGI' | 'SIANG';
+  shift_type: 'PAGI' | 'SIANG' | 'LONG' | 'OFF';
   shift_start: string;
   shift_end: string;
   shift_label: string;
@@ -229,17 +229,23 @@ export default function EmployeeScheduleView() {
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
-                        sch.shift_type === 'SIANG'
-                          ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                        sch.shift_type === 'OFF'
+                          ? 'bg-rose-500 text-white border border-rose-600'
+                          : sch.shift_type === 'LONG'
+                          ? 'bg-amber-400 text-amber-950 font-black border border-amber-500'
+                          : sch.shift_type === 'SIANG'
+                          ? 'bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800'
                           : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                       }`}
                     >
-                      {sch.shift_type}
+                      {sch.shift_type === 'OFF' ? 'LIBUR (OFF)' : sch.shift_type === 'LONG' ? 'LONG SHIFT' : sch.shift_type}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                     <Clock className="h-3.5 w-3.5 text-sky-500" />
-                    <span>{sch.shift_start} — {sch.shift_end} WIB</span>
+                    <span>
+                      {sch.shift_type === 'OFF' ? 'Hari Libur Terjadwal' : `${sch.shift_start} — ${sch.shift_end} WIB`}
+                    </span>
                   </div>
                 </div>
                 <div className="mt-3 pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[11px] text-slate-500 flex items-center justify-between">
@@ -299,16 +305,20 @@ export default function EmployeeScheduleView() {
                     <td className="py-2.5 px-3 whitespace-nowrap">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          sch.shift_type === 'SIANG'
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                          sch.shift_type === 'OFF'
+                            ? 'bg-rose-500 text-white'
+                            : sch.shift_type === 'LONG'
+                            ? 'bg-amber-400 text-amber-950 font-black'
+                            : sch.shift_type === 'SIANG'
+                            ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
                             : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                         }`}
                       >
-                        {sch.shift_type}
+                        {sch.shift_type === 'OFF' ? 'OFF' : sch.shift_type === 'LONG' ? 'LONG' : sch.shift_type}
                       </span>
                     </td>
                     <td className="py-2.5 px-3 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                      {sch.shift_start} — {sch.shift_end}
+                      {sch.shift_type === 'OFF' ? 'Libur' : `${sch.shift_start} — ${sch.shift_end}`}
                     </td>
                   </tr>
                 ))}

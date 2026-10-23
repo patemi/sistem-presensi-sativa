@@ -4,6 +4,17 @@ import { CreateSwapRequestDto } from './dto/create-swap-request.dto';
 export declare class ScheduleController {
     private readonly scheduleService;
     constructor(scheduleService: ScheduleService);
+    createSchedule(dto: {
+        user_id: string;
+        date: string;
+        target_check_in?: string;
+        target_check_out?: string;
+        shift_type?: string;
+    }): Promise<{
+        success: boolean;
+        message: string;
+        schedule: import("./entities/schedule.entity").Schedule;
+    }>;
     bulkCreate(payload: ScheduleItemDto[] | {
         schedules: ScheduleItemDto[];
     }): Promise<{
@@ -13,6 +24,7 @@ export declare class ScheduleController {
         schedules: import("./entities/schedule.entity").Schedule[];
     }>;
     getSchedules(month?: string, date?: string, userId?: string): Promise<{
+        shift_code: string;
         shift_start: string;
         shift_end: string;
         shift_label: string;
@@ -24,10 +36,13 @@ export declare class ScheduleController {
         user_id: string;
         date: string;
         shift_type: import("./entities/schedule.entity").ShiftType;
+        target_check_in: string;
+        target_check_out: string;
         created_at: Date;
         updated_at: Date;
     }[]>;
     getMySchedules(user: any, month?: string): Promise<{
+        shift_code: string;
         shift_start: string;
         shift_end: string;
         shift_label: string;
@@ -39,6 +54,8 @@ export declare class ScheduleController {
         user_id: string;
         date: string;
         shift_type: import("./entities/schedule.entity").ShiftType;
+        target_check_in: string;
+        target_check_out: string;
         created_at: Date;
         updated_at: Date;
     }[]>;

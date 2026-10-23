@@ -36,6 +36,7 @@ export declare class AuthController {
         inviteStatus: string;
         invitedAt: Date | null;
         lastLoginAt: Date | null;
+        faceDescriptor: string | null;
         divisionId: string | null;
     }>;
     validateInvite(code: string): Promise<{
@@ -77,7 +78,61 @@ export declare class AuthController {
         inviteStatus: string;
         invitedAt: Date | null;
         lastLoginAt: Date | null;
+        faceDescriptor: string | null;
         divisionId: string | null;
+    }>;
+    changePassword(req: any, body: {
+        currentPassword?: string;
+        newPassword: string;
+    }): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    updateFaceDescriptor(req: any, body: {
+        faceDescriptor: string;
+        userId?: string;
+    }): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    getFaceDescriptor(req: any, queryUserId?: string): Promise<{
+        hasFaceDescriptor: boolean;
+        faceDescriptor: string | null;
+        user: {
+            id: string;
+            fullName: string;
+            role: string;
+        };
+    }>;
+    resetFaceDescriptor(req: any, targetUserId: string): Promise<{
+        success: boolean;
+        message: string;
+        user: {
+            id: string;
+            fullName: string;
+            role: string;
+            hasFaceDescriptor: boolean;
+        };
+    }>;
+    deleteFaceDescriptor(req: any, targetUserId: string): Promise<{
+        success: boolean;
+        message: string;
+        user: {
+            id: string;
+            fullName: string;
+            role: string;
+            hasFaceDescriptor: boolean;
+        };
+    }>;
+    resetMyFace(req: any): Promise<{
+        success: boolean;
+        message: string;
+        user: {
+            id: string;
+            fullName: string;
+            role: string;
+            hasFaceDescriptor: boolean;
+        };
     }>;
     addAdmin(req: any, body: {
         fullName: string;
@@ -97,19 +152,23 @@ export declare class AuthController {
         inviteStatus: string;
         invitedAt: Date | null;
         lastLoginAt: Date | null;
+        faceDescriptor: string | null;
         divisionId: string | null;
     }>;
-    getEmployees(req: any, status?: string, divisionId?: string, search?: string): Promise<{
+    getEmployees(req: any, status?: string, divisionId?: string, search?: string, role?: string): Promise<{
         stats: {
             total: number;
             joined: number;
             sent: number;
             pending: number;
+            withFace: number;
         };
         employees: {
             id: string;
             fullName: string;
             email: string;
+            role: string;
+            hasFaceDescriptor: boolean;
             divisionId: string | null;
             divisionName: string;
             division: {
@@ -190,7 +249,15 @@ export declare class AuthController {
     getDivisions(req: any): Promise<{
         id: string;
         name: string;
-        organizationId: string;
+        userCount: number;
+        users: {
+            id: string;
+            fullName: string;
+            email: string;
+            role: string;
+            hasFace: boolean;
+        }[];
+        hasMinimumEmployees: boolean;
     }[]>;
     createDivision(req: any, body: {
         name: string;
@@ -198,5 +265,36 @@ export declare class AuthController {
         id: string;
         name: string;
         organizationId: string;
+    }>;
+    updateDivision(req: any, id: string, body: {
+        name: string;
+    }): Promise<{
+        success: boolean;
+        message: string;
+        division: {
+            id: string;
+            name: string;
+            organizationId: string;
+        };
+    }>;
+    deleteDivision(req: any, id: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    updateEmployeeDivision(req: any, id: string, body: {
+        divisionId: string | null;
+    }): Promise<{
+        success: boolean;
+        message: string;
+        user: {
+            id: string;
+            fullName: string;
+            divisionId: string | null;
+            divisionName: string;
+        };
+    }>;
+    deleteEmployee(req: any, id: string): Promise<{
+        success: boolean;
+        message: string;
     }>;
 }

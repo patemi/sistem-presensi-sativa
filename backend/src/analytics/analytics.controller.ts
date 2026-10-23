@@ -61,5 +61,11 @@ export class AnalyticsController {
   async getOrganizationSummary(@CurrentUser() user: any) {
     return this.analyticsService.getOrganizationSummary(user.organizationId);
   }
+
+  @Get('alerts')
+  @Roles('owner', 'hr')
+  async getAlerts(@CurrentUser() user: any) {
+    return this.analyticsService.getAlerts(user.organizationId);
+  }
 }
 

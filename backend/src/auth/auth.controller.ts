@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Body, Get, Param, Query, UseGuards, Request, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Patch, Delete, Body, Get, Param, Query, UseGuards, Request, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from '../common/guards/jwt.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -56,6 +56,72 @@ export class AuthController {
     return this.authService.updateProfile(req.user.id, body);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Patch('change-password')
+  async changePassword(
+    @Request() req,
+    @Body() body: { currentPassword?: string; newPassword: string },
+  ) {
+    return this.authService.changePassword(req.user.id, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('face-descriptor')
+  async updateFaceDescriptor(
+    @Request() req,
+    @Body() body: { faceDescriptor: string; userId?: string },
+  ) {
+    const targetUserId =
+      (req.user.role === 'hr' || req.user.role === 'ADMIN' || req.user.role === 'HR' || req.user.role === 'owner') && body.userId
+        ? body.userId
+        : req.user.id;
+    return this.authService.updateFaceDescriptor(targetUserId, body.faceDescriptor, req.user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('face-descriptor')
+  async getFaceDescriptor(
+    @Request() req,
+    @Query('userId') queryUserId?: string,
+  ) {
+    const targetUserId =
+      (req.user.role === 'hr' || req.user.role === 'ADMIN' || req.user.role === 'HR' || req.user.role === 'owner') && queryUserId
+        ? queryUserId
+        : req.user.id;
+    return this.authService.getFaceDescriptor(targetUserId);
+  }
+
+  /**
+   * Endpoint HR/Admin untuk mereset master wajah karyawan atau sesama admin
+   */
+  @UseGuards(JwtAuthGuard)
+  @Patch('reset-face/:userId')
+  async resetFaceDescriptor(
+    @Request() req,
+    @Param('userId') targetUserId: string,
+  ) {
+    return this.authService.resetFaceDescriptor(targetUserId, req.user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('face-descriptor/:userId')
+  async deleteFaceDescriptor(
+    @Request() req,
+    @Param('userId') targetUserId: string,
+  ) {
+    return this.authService.resetFaceDescriptor(targetUserId, req.user);
+  }
+
+  /**
+   * Endpoint bagi Admin/HR untuk mereset master wajah miliknya sendiri
+   */
+  @UseGuards(JwtAuthGuard)
+  @Patch('reset-my-face')
+  async resetMyFace(@Request() req) {
+    return this.authService.resetFaceDescriptor(req.user.id, req.user);
+  }
+
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('hr', 'owner')
   @Post('add-admin')
@@ -74,9 +140,11 @@ export class AuthController {
     @Query('status') status?: string,
     @Query('divisionId') divisionId?: string,
     @Query('search') search?: string,
+    @Query('role') role?: string,
   ) {
-    return this.authService.getEmployees(req.user.id, { status, divisionId, search });
+    return this.authService.getEmployees(req.user.id, { status, divisionId, search, role });
   }
+
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('hr', 'owner')
@@ -113,6 +181,48 @@ export class AuthController {
     @Body() body: { name: string },
   ) {
     return this.authService.createDivision(req.user.id, body.name);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('hr', 'owner')
+  @Patch('divisions/:id')
+  async updateDivision(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: { name: string },
+  ) {
+    return this.authService.updateDivision(req.user.id, id, body.name);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('hr', 'owner')
+  @Delete('divisions/:id')
+  async deleteDivision(
+    @Request() req,
+    @Param('id') id: string,
+  ) {
+    return this.authService.deleteDivision(req.user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('hr', 'owner')
+  @Patch('employees/:id/division')
+  async updateEmployeeDivision(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() body: { divisionId: string | null },
+  ) {
+    return this.authService.updateUserDivision(req.user.id, id, body.divisionId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('hr', 'owner')
+  @Delete('employees/:id')
+  async deleteEmployee(
+    @Request() req,
+    @Param('id') id: string,
+  ) {
+    return this.authService.deleteEmployee(req.user.id, id);
   }
 }
 

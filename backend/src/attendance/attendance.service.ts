@@ -4,7 +4,15 @@ import { Repository } from 'typeorm';
 import { Attendance } from './entities/attendance.entity';
 import { Schedule, ShiftType } from '../schedule/entities/schedule.entity';
 import { CheckoutAttendanceDto } from './dto/checkout-attendance.dto';
+import { CheckInAttendanceDto } from './dto/checkin-attendance.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { CLINIC_LOCATION, validateGeofence, updateClinicCoordinates } from '../common/utils/haversine.util';
+import {
+  parseFaceDescriptor,
+  calculateEuclideanDistance,
+  calculateSimilarityPercent,
+  FACE_MATCH_MAX_DISTANCE,
+} from '../common/utils/biometric.util';
 
 @Injectable()
 export class AttendanceService {
@@ -29,18 +37,207 @@ export class AttendanceService {
   }
 
   /**
+   * ALUR PRESENSI DATANG (NEST.JS):
+   * Endpoint POST /attendance/check-in
+   * Memvalidasi lokasi (< 1 meter dari Orella Aesthetic Clinic),
+   * mencatat jam check-in, dan mengembalikan target_check_out untuk mengunci tombol pulang.
+   */
+  async checkIn(userId: string, dto: CheckInAttendanceDto) {
+    if (dto.latitude === undefined || dto.longitude === undefined) {
+      throw new BadRequestException('Koordinat GPS (latitude & longitude) wajib disertakan');
+    }
+
+    // 1. Validasi Geofence ketat: < 1 meter dari lokasi klinik
+    const geo = validateGeofence(
+      dto.latitude,
+      dto.longitude,
+      CLINIC_LOCATION.latitude,
+      CLINIC_LOCATION.longitude,
+      CLINIC_LOCATION.maxRadiusMeters,
+    );
+
+    const disableGeofence = process.env.DISABLE_GEOFENCE === 'true';
+    if (!geo.isWithin && !disableGeofence) {
+      throw new BadRequestException(
+        `Lokasi Anda terdeteksi ${geo.distance.toFixed(2)} meter dari klinik. Batas maksimal presensi adalah ${CLINIC_LOCATION.maxRadiusMeters} meter dari titik klinik.`,
+      );
+    }
+
+    const checkInDate = dto.check_in_time ? new Date(dto.check_in_time) : new Date();
+    const dateStr = dto.date || this.formatDateStr(checkInDate);
+
+    // 2. Validasi Biometrik Wajah & Anti-Joki (Wajah harus cocok dengan master biometrik akun)
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fullName: true, faceDescriptor: true, role: true },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Pengguna tidak ditemukan.');
+    }
+
+    if (!user.faceDescriptor) {
+      throw new BadRequestException(
+        'Master biometrik wajah Anda belum terdaftar. Silakan klik tombol "Daftarkan" master wajah terlebih dahulu sebelum melakukan presensi.',
+      );
+    }
+
+    // Jika live face descriptor dikirim dari kamera, verifikasi kecocokannya dengan master wajah pengguna
+    if (dto.face_descriptor) {
+      try {
+        const liveVector = parseFaceDescriptor(dto.face_descriptor);
+        const masterVector = parseFaceDescriptor(user.faceDescriptor);
+        const distance = calculateEuclideanDistance(liveVector, masterVector);
+
+        // Ambang batas ketat: jika jarak > 0.50, wajah tidak cocok (bukan karyawan yang bersangkutan)
+        if (distance > FACE_MATCH_MAX_DISTANCE) {
+          const similarity = calculateSimilarityPercent(distance);
+          throw new BadRequestException(
+            `Verifikasi Wajah Gagal: Wajah yang tampil di kamera tidak cocok dengan master biometrik Anda (${similarity}% kemiripan, minimal 85%). Presensi harus dilakukan langsung oleh karyawan pemilik akun asli!`,
+          );
+        }
+      } catch (err: any) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException('Gagal memverifikasi data biometrik wajah: ' + err.message);
+      }
+    } else if (!dto.face_verified) {
+      throw new BadRequestException('Verifikasi biometrik wajah wajib dilakukan melalui pemindaian kamera.');
+    }
+
+    // 3. Cek apakah sudah pernah check-in hari ini
+    let attendance = await this.attendanceRepo.findOne({
+      where: { user_id: userId, date: dateStr },
+    });
+
+    if (attendance && attendance.check_in_time) {
+      throw new BadRequestException('Anda sudah melakukan presensi datang hari ini.');
+    }
+
+    // 3. Simpan atau perbarui data Attendance
+    if (!attendance) {
+      attendance = this.attendanceRepo.create({
+        user_id: userId,
+        date: dateStr,
+        check_in_time: checkInDate,
+      });
+    } else {
+      attendance.check_in_time = checkInDate;
+    }
+
+    const saved = await this.attendanceRepo.save(attendance);
+
+    // 4. Cari jadwal shift karyawan untuk hari ini
+    const schedule = await this.scheduleRepo.findOne({
+      where: { user_id: userId, date: dateStr },
+    });
+
+    // Default target_check_out jika belum diset
+    let targetCheckOut = '17:00';
+    let targetCheckIn = '08:30';
+    if (schedule?.target_check_out && schedule.target_check_out !== '-') {
+      targetCheckOut = schedule.target_check_out;
+    } else if (schedule?.shift_type === ShiftType.SIANG) {
+      targetCheckOut = '19:00';
+    } else if (schedule?.shift_type === ShiftType.LONG) {
+      targetCheckOut = '20:00';
+    } else if (schedule?.shift_type === ShiftType.OFF) {
+      targetCheckOut = '-';
+    }
+
+    if (schedule?.target_check_in && schedule.target_check_in !== '-') {
+      targetCheckIn = schedule.target_check_in;
+    } else if (schedule?.shift_type === ShiftType.SIANG) {
+      targetCheckIn = '10:30';
+    } else if (schedule?.shift_type === ShiftType.LONG) {
+      targetCheckIn = '08:30';
+    } else if (schedule?.shift_type === ShiftType.OFF) {
+      targetCheckIn = '-';
+    }
+
+    // 5. Cek apakah waktu sekarang sudah melewati target_check_out
+    let canCheckout = false;
+    if (targetCheckOut === '-') {
+      canCheckout = true;
+    } else {
+      const [outH, outM] = targetCheckOut.split(':').map(Number);
+      const targetOutTime = new Date(checkInDate);
+      targetOutTime.setHours(outH, outM, 0, 0);
+      canCheckout = checkInDate.getTime() >= targetOutTime.getTime();
+    }
+
+    // 6. Sinkronisasi ke attendance_checkins Prisma jika ada
+    try {
+      const todayStart = new Date(checkInDate);
+      todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date(checkInDate);
+      todayEnd.setHours(23, 59, 59, 999);
+
+      const existingCheckin = await this.prisma.attendanceCheckin.findFirst({
+        where: { userId, checkInTime: { gte: todayStart, lte: todayEnd } },
+      });
+
+      if (!existingCheckin) {
+        await this.prisma.attendanceCheckin.create({
+          data: {
+            userId,
+            checkInTime: checkInDate,
+            latitude: dto.latitude,
+            longitude: dto.longitude,
+            distanceMeters: geo.distance,
+            isWithinGeofence: geo.isWithin,
+            lateMinutes: 0,
+            attendanceStatus: 'belum_lengkap',
+          },
+        });
+      }
+    } catch (e) {
+      this.logger.warn('Prisma attendance_checkin sync skipped', e);
+    }
+
+    return {
+      success: true,
+      status: 'Kehadiran Berhasil',
+      message: 'Presensi datang berhasil diverifikasi dan dicatat!',
+      attendance: saved,
+      schedule: schedule || {
+        date: dateStr,
+        target_check_in: targetCheckIn,
+        target_check_out: targetCheckOut,
+      },
+      target_check_in: targetCheckIn,
+      target_check_out: targetCheckOut,
+      can_checkout: canCheckout,
+    };
+  }
+
+  /**
    * FITUR KEPULANGAN & DETEKSI STRES (NEST.JS):
-   * Endpoint PATCH /attendance/checkout.
-   * Menerima check_out_time (jam aktual saat klik tombol) dan mental_health_log (teks unek-unek).
-   * Logic kalkulasi: Jika check_out_time melewati jam selesai shift karyawan tersebut,
-   * otomatis hitung selisihnya dan simpan ke kolom overtime_minutes.
-   * Simpan juga teks unek-uneknya.
+   * Endpoint PATCH /attendance/checkout atau PATCH /attendance/check-out.
+   * Menerima check_out_time, latitude, longitude, dan mental_health_log (teks unek-unek).
+   * Validasi radius < 1m dan jam >= target_check_out.
    */
   async checkout(userId: string, dto: CheckoutAttendanceDto) {
     if (!dto.mental_health_log || dto.mental_health_log.trim().length === 0) {
       throw new BadRequestException(
-        'Teks unek-unek / catatan evaluasi hari ini (mental_health_log) wajib diisi.',
+        'Teks unek-unek / cerita harimu (mental_health_log) wajib diisi.',
       );
+    }
+
+    // Validasi lokasi < 1m jika koordinat dikirim
+    if (dto.latitude !== undefined && dto.longitude !== undefined) {
+      const geo = validateGeofence(
+        dto.latitude,
+        dto.longitude,
+        CLINIC_LOCATION.latitude,
+        CLINIC_LOCATION.longitude,
+        CLINIC_LOCATION.maxRadiusMeters,
+      );
+      const disableGeofence = process.env.DISABLE_GEOFENCE === 'true';
+      if (!geo.isWithin && !disableGeofence) {
+        throw new BadRequestException(
+          `Lokasi Anda terdeteksi ${geo.distance.toFixed(2)} meter dari klinik. Presensi kepulangan hanya dapat dilakukan di dalam area klinik (< ${CLINIC_LOCATION.maxRadiusMeters} meter).`,
+        );
+      }
     }
 
     const checkOutDate = dto.check_out_time
@@ -67,9 +264,30 @@ export class AttendanceService {
       throw new BadRequestException('User tidak ditemukan');
     }
 
+    // Validasi Biometrik Wajah Kepulangan
+    if (user.faceDescriptor && dto.face_descriptor) {
+      try {
+        const liveVector = parseFaceDescriptor(dto.face_descriptor);
+        const masterVector = parseFaceDescriptor(user.faceDescriptor);
+        const distance = calculateEuclideanDistance(liveVector, masterVector);
+
+        if (distance > FACE_MATCH_MAX_DISTANCE) {
+          const similarity = calculateSimilarityPercent(distance);
+          throw new BadRequestException(
+            `Verifikasi Wajah Gagal: Wajah yang tampil di kamera tidak cocok dengan master biometrik Anda (${similarity}% kemiripan). Presensi kepulangan harus dilakukan langsung oleh pemilik akun asli!`,
+          );
+        }
+      } catch (err: any) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException('Gagal memverifikasi data biometrik wajah kepulangan: ' + err.message);
+      }
+    }
+
     // 2. Tentukan jam selesai shift:
     // PAGI -> 17:00 (08:30 - 17:00)
     // SIANG -> 19:00 (10:30 - 19:00)
+    // LONG -> 20:00 (08:30 - 20:00 / Closing)
+    // OFF -> Libur
     let shiftEndHour = 17;
     let shiftEndMinute = 0;
     let shiftTypeLabel = 'PAGI (08:30 - 17:00)';
@@ -79,10 +297,26 @@ export class AttendanceService {
         shiftEndHour = 19;
         shiftEndMinute = 0;
         shiftTypeLabel = 'SIANG (10:30 - 19:00)';
+      } else if (schedule.shift_type === ShiftType.LONG) {
+        shiftEndHour = 20;
+        shiftEndMinute = 0;
+        shiftTypeLabel = 'LONG SHIFT (08:30 - 20:00 / Closing)';
+      } else if (schedule.shift_type === ShiftType.OFF) {
+        shiftEndHour = 17;
+        shiftEndMinute = 0;
+        shiftTypeLabel = 'LIBUR (OFF)';
       } else {
         shiftEndHour = 17;
         shiftEndMinute = 0;
         shiftTypeLabel = 'PAGI (08:30 - 17:00)';
+      }
+
+      if (schedule.target_check_out && schedule.target_check_out.includes(':')) {
+        const [h, m] = schedule.target_check_out.split(':').map(Number);
+        if (!isNaN(h) && !isNaN(m)) {
+          shiftEndHour = h;
+          shiftEndMinute = m;
+        }
       }
     } else if (user.shiftEnd) {
       // Fallback ke shift_end di profil user
@@ -204,15 +438,38 @@ export class AttendanceService {
     });
 
     let shiftType = schedule?.shift_type || ShiftType.PAGI;
-    let shiftEndHour = shiftType === ShiftType.SIANG ? 19 : 17;
+    let shiftEndHour = 17;
     let shiftEndMinute = 0;
-    let shiftStart = shiftType === ShiftType.SIANG ? '10:30' : '08:30';
-    let shiftEnd = `${String(shiftEndHour).padStart(2, '0')}:${String(shiftEndMinute).padStart(2, '0')}`;
+    let shiftStart = '08:30';
+
+    if (shiftType === ShiftType.SIANG) {
+      shiftStart = '10:30';
+      shiftEndHour = 19;
+    } else if (shiftType === ShiftType.LONG) {
+      shiftStart = '08:30';
+      shiftEndHour = 20;
+    } else if (shiftType === ShiftType.OFF) {
+      shiftStart = '-';
+      shiftEndHour = 17;
+    }
+
+    if (schedule?.target_check_in && schedule.target_check_in !== '-') {
+      shiftStart = schedule.target_check_in;
+    }
+    if (schedule?.target_check_out && schedule.target_check_out.includes(':')) {
+      const [h, m] = schedule.target_check_out.split(':').map(Number);
+      if (!isNaN(h)) shiftEndHour = h;
+      if (!isNaN(m)) shiftEndMinute = m;
+    }
+
+    let shiftEnd = shiftType === ShiftType.OFF
+      ? '-'
+      : `${String(shiftEndHour).padStart(2, '0')}:${String(shiftEndMinute).padStart(2, '0')}`;
 
     const shiftEndTime = new Date(now);
     shiftEndTime.setHours(shiftEndHour, shiftEndMinute, 0, 0);
 
-    const isPastShiftEnd = now.getTime() >= shiftEndTime.getTime();
+    const isPastShiftEnd = shiftType === ShiftType.OFF ? true : now.getTime() >= shiftEndTime.getTime();
 
     const attendance = await this.attendanceRepo.findOne({
       where: { user_id: userId, date: dateStr },
@@ -232,5 +489,41 @@ export class AttendanceService {
       // Status text helper untuk UI
       needsCheckoutNotice: isPastShiftEnd && !hasCheckedOut,
     };
+  }
+
+  /**
+   * Kalibrasi titik pusat klinik Orella sesuai koordinat meja kerja aktual pengguna
+   */
+  async calibrateClinicLocation(latitude: number, longitude: number, radiusMeters: number = 25.0) {
+    if (latitude === undefined || longitude === undefined) {
+      throw new BadRequestException('Latitude dan longitude wajib diisi');
+    }
+
+    updateClinicCoordinates(latitude, longitude, radiusMeters);
+
+    try {
+      await this.prisma.officeLocation.updateMany({
+        where: { label: { contains: 'Orella' } },
+        data: {
+          latitude,
+          longitude,
+          radiusMeters,
+        },
+      });
+    } catch (e) {
+      this.logger.warn('Failed to update officeLocation table in prisma', e);
+    }
+
+    this.logger.log(`Titik klinik Orella dikalibrasi ke: Lat=${latitude}, Lng=${longitude}, Radius=${radiusMeters}m`);
+
+    return {
+      success: true,
+      message: 'Titik pusat koordinat klinik berhasil dikalibrasi ke posisi meja Anda!',
+      location: CLINIC_LOCATION,
+    };
+  }
+
+  getClinicLocation() {
+    return CLINIC_LOCATION;
   }
 }

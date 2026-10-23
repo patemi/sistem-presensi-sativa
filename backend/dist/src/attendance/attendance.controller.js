@@ -18,10 +18,17 @@ const attendance_service_1 = require("./attendance.service");
 const jwt_guard_1 = require("../common/guards/jwt.guard");
 const user_decorator_1 = require("../common/decorators/user.decorator");
 const checkout_attendance_dto_1 = require("./dto/checkout-attendance.dto");
+const checkin_attendance_dto_1 = require("./dto/checkin-attendance.dto");
 let AttendanceController = class AttendanceController {
     attendanceService;
     constructor(attendanceService) {
         this.attendanceService = attendanceService;
+    }
+    async checkIn(user, dto) {
+        return this.attendanceService.checkIn(user.id, dto);
+    }
+    async checkOut(user, dto) {
+        return this.attendanceService.checkout(user.id, dto);
     }
     async checkout(user, dto) {
         return this.attendanceService.checkout(user.id, dto);
@@ -29,8 +36,30 @@ let AttendanceController = class AttendanceController {
     async getTodayStatus(user) {
         return this.attendanceService.getTodayStatus(user.id);
     }
+    async calibrateClinicLocation(body) {
+        return this.attendanceService.calibrateClinicLocation(body.latitude, body.longitude, body.radiusMeters);
+    }
+    async getClinicLocation() {
+        return this.attendanceService.getClinicLocation();
+    }
 };
 exports.AttendanceController = AttendanceController;
+__decorate([
+    (0, common_1.Post)('check-in'),
+    __param(0, (0, user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, checkin_attendance_dto_1.CheckInAttendanceDto]),
+    __metadata("design:returntype", Promise)
+], AttendanceController.prototype, "checkIn", null);
+__decorate([
+    (0, common_1.Patch)('check-out'),
+    __param(0, (0, user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, checkout_attendance_dto_1.CheckoutAttendanceDto]),
+    __metadata("design:returntype", Promise)
+], AttendanceController.prototype, "checkOut", null);
 __decorate([
     (0, common_1.Patch)('checkout'),
     __param(0, (0, user_decorator_1.CurrentUser)()),
@@ -46,6 +75,19 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AttendanceController.prototype, "getTodayStatus", null);
+__decorate([
+    (0, common_1.Patch)('calibrate-clinic-location'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AttendanceController.prototype, "calibrateClinicLocation", null);
+__decorate([
+    (0, common_1.Get)('clinic-location'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AttendanceController.prototype, "getClinicLocation", null);
 exports.AttendanceController = AttendanceController = __decorate([
     (0, common_1.Controller)('attendance'),
     (0, common_1.UseGuards)(jwt_guard_1.JwtAuthGuard),

@@ -2,6 +2,7 @@ import { Repository } from 'typeorm';
 import { Attendance } from './entities/attendance.entity';
 import { Schedule, ShiftType } from '../schedule/entities/schedule.entity';
 import { CheckoutAttendanceDto } from './dto/checkout-attendance.dto';
+import { CheckInAttendanceDto } from './dto/checkin-attendance.dto';
 import { PrismaService } from '../prisma/prisma.service';
 export declare class AttendanceService {
     private readonly attendanceRepo;
@@ -10,6 +11,20 @@ export declare class AttendanceService {
     private readonly logger;
     constructor(attendanceRepo: Repository<Attendance>, scheduleRepo: Repository<Schedule>, prisma: PrismaService);
     private formatDateStr;
+    checkIn(userId: string, dto: CheckInAttendanceDto): Promise<{
+        success: boolean;
+        status: string;
+        message: string;
+        attendance: Attendance;
+        schedule: Schedule | {
+            date: string;
+            target_check_in: string;
+            target_check_out: string;
+        };
+        target_check_in: string;
+        target_check_out: string;
+        can_checkout: boolean;
+    }>;
     checkout(userId: string, dto: CheckoutAttendanceDto): Promise<{
         success: boolean;
         message: string;
@@ -36,4 +51,20 @@ export declare class AttendanceService {
         attendance: Attendance | null;
         needsCheckoutNotice: boolean;
     }>;
+    calibrateClinicLocation(latitude: number, longitude: number, radiusMeters?: number): Promise<{
+        success: boolean;
+        message: string;
+        location: {
+            name: string;
+            latitude: number;
+            longitude: number;
+            maxRadiusMeters: number;
+        };
+    }>;
+    getClinicLocation(): {
+        name: string;
+        latitude: number;
+        longitude: number;
+        maxRadiusMeters: number;
+    };
 }

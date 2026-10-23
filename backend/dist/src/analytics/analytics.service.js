@@ -79,6 +79,7 @@ let AnalyticsService = AnalyticsService_1 = class AnalyticsService {
         const presentList = checkins.map((c) => {
             const emp = employees.find((e) => e.id === c.userId);
             return {
+                id: c.id,
                 userId: c.userId,
                 fullName: emp?.fullName || 'Karyawan',
                 divisionName: emp?.division?.name || 'Umum',
@@ -93,6 +94,7 @@ let AnalyticsService = AnalyticsService_1 = class AnalyticsService {
         const absentList = employees
             .filter((e) => !checkins.some((c) => c.userId === e.id))
             .map((e) => ({
+            id: e.id,
             userId: e.id,
             fullName: e.fullName,
             divisionName: e.division?.name || 'Umum',
@@ -325,6 +327,26 @@ let AnalyticsService = AnalyticsService_1 = class AnalyticsService {
             divisionsNeedingAttention: criticalDivisions.length,
             avgOrganizationMood: avgOrgMood,
         };
+    }
+    async getAlerts(organizationId) {
+        const criticalInsights = await this.prisma.divisionWellbeingInsight.findMany({
+            where: {
+                division: { organizationId },
+                riskLevel: { in: ['kritis', 'perlu_perhatian'] },
+            },
+            include: {
+                division: true,
+            },
+            orderBy: { periodEnd: 'desc' },
+            take: 10,
+        });
+        return criticalInsights.map((ins) => ({
+            id: ins.id,
+            alertType: ins.riskLevel === 'kritis' ? 'Peringatan Kritis' : 'Perlu Perhatian',
+            divisionName: ins.division?.name || 'Divisi Klinik',
+            suggestedAction: ins.dominantThemes || 'Perlu evaluasi beban kerja dan iklim komunikasi staf.',
+            createdAt: ins.periodEnd,
+        }));
     }
 };
 exports.AnalyticsService = AnalyticsService;

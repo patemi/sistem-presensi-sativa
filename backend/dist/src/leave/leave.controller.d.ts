@@ -59,6 +59,7 @@ export declare class LeaveController {
             inviteStatus: string;
             invitedAt: Date | null;
             lastLoginAt: Date | null;
+            faceDescriptor: string | null;
             divisionId: string | null;
         };
     } & {
@@ -103,6 +104,7 @@ export declare class LeaveController {
                 inviteStatus: string;
                 invitedAt: Date | null;
                 lastLoginAt: Date | null;
+                faceDescriptor: string | null;
                 divisionId: string | null;
             };
             reviewedBy: {

@@ -21,6 +21,7 @@ export declare class AnalyticsService {
             lateRate: number;
         };
         presentList: {
+            id: string;
             userId: string;
             fullName: string;
             divisionName: string;
@@ -32,6 +33,7 @@ export declare class AnalyticsService {
             officeLabel: string;
         }[];
         absentList: {
+            id: string;
             userId: string;
             fullName: string;
             divisionName: string;
@@ -47,4 +49,11 @@ export declare class AnalyticsService {
         divisionsNeedingAttention: number;
         avgOrganizationMood: number;
     }>;
+    getAlerts(organizationId: string): Promise<{
+        id: string;
+        alertType: string;
+        divisionName: string;
+        suggestedAction: string;
+        createdAt: Date;
+    }[]>;
 }

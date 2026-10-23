@@ -39,6 +39,9 @@ let AnalyticsController = class AnalyticsController {
     async getOrganizationSummary(user) {
         return this.analyticsService.getOrganizationSummary(user.organizationId);
     }
+    async getAlerts(user) {
+        return this.analyticsService.getAlerts(user.organizationId);
+    }
 };
 exports.AnalyticsController = AnalyticsController;
 __decorate([
@@ -83,6 +86,14 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AnalyticsController.prototype, "getOrganizationSummary", null);
+__decorate([
+    (0, common_1.Get)('alerts'),
+    (0, roles_decorator_1.Roles)('owner', 'hr'),
+    __param(0, (0, user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AnalyticsController.prototype, "getAlerts", null);
 exports.AnalyticsController = AnalyticsController = __decorate([
     (0, common_1.Controller)('analytics'),
     (0, common_1.UseGuards)(jwt_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),

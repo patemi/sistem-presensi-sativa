@@ -20,7 +20,8 @@ import {
   Droplets, User, UserPlus, FolderPlus, Mail, Send,
   Eye, EyeOff, X, Check, Building, Briefcase, FileSpreadsheet,
   LayoutDashboard, Settings, ChevronRight, Users, Shield, Menu,
-  Copy, CalendarCheck, FileText, MessageSquare
+  Copy, CalendarCheck, FileText, MessageSquare, ScanFace, RotateCcw,
+  Edit2, Trash2, UserCheck, Plus
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, 
@@ -42,7 +43,7 @@ function HrDashboardContent() {
   const router = useRouter();
 
   // Sidebar navigation state
-  const [sidebarNav, setSidebarNav] = useState<'overview' | 'attendance' | 'psychological' | 'leaves' | 'management' | 'schedules'>('overview');
+  const [sidebarNav, setSidebarNav] = useState<'overview' | 'employees' | 'attendance' | 'psychological' | 'leaves' | 'management' | 'schedules'>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [attendanceData, setAttendanceData] = useState<any>(null);
@@ -82,6 +83,33 @@ function HrDashboardContent() {
   const [divisionLoading, setDivisionLoading] = useState(false);
   const [divisionMsg, setDivisionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Edit Division state
+  const [editingDivision, setEditingDivision] = useState<{ id: string; name: string } | null>(null);
+  const [editDivisionName, setEditDivisionName] = useState('');
+  const [editDivisionLoading, setEditDivisionLoading] = useState(false);
+  const [editDivisionMsg, setEditDivisionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Delete Division state
+  const [deletingDivision, setDeletingDivision] = useState<{ id: string; name: string; userCount?: number } | null>(null);
+  const [deleteDivisionLoading, setDeleteDivisionLoading] = useState(false);
+
+  // Quick Reassign Employee Division Modal
+  const [reassignModal, setReassignModal] = useState<{
+    employeeId: string;
+    employeeName: string;
+    currentDivisionId: string | null;
+    currentDivisionName: string;
+  } | null>(null);
+  const [targetDivisionId, setTargetDivisionId] = useState('');
+  const [reassignLoading, setReassignLoading] = useState(false);
+  const [reassignMsg, setReassignMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Quick Assign Staff to specific Division (to fulfill "min 1 karyawan" rule)
+  const [quickAssignDivision, setQuickAssignDivision] = useState<{ id: string; name: string } | null>(null);
+  const [selectedStaffIdToAssign, setSelectedStaffIdToAssign] = useState('');
+  const [quickAssignLoading, setQuickAssignLoading] = useState(false);
+  const [quickAssignMsg, setQuickAssignMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Invite Employee Form state
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
@@ -95,23 +123,31 @@ function HrDashboardContent() {
   const [selectedDivision, setSelectedDivision] = useState<string>('all');
 
   // Divisions list state
-  const [divisionsList, setDivisionsList] = useState<{ id: string; name: string }[]>([]);
+  const [divisionsList, setDivisionsList] = useState<{
+    id: string;
+    name: string;
+    userCount?: number;
+    users?: { id: string; fullName: string; email: string; role: string; hasFace?: boolean }[];
+    hasMinimumEmployees?: boolean;
+  }[]>([]);
 
   // Employee Directory & Tracking State
   const [employeesData, setEmployeesData] = useState<{
-    stats: { total: number; joined: number; sent: number; pending: number };
+    stats: { total: number; joined: number; sent: number; pending: number; withFace?: number };
     employees: any[];
   }>({
-    stats: { total: 0, joined: 0, sent: 0, pending: 0 },
+    stats: { total: 0, joined: 0, sent: 0, pending: 0, withFace: 0 },
     employees: [],
   });
   const [employeesLoading, setEmployeesLoading] = useState(false);
   const [employeeStatusFilter, setEmployeeStatusFilter] = useState<'all' | 'joined' | 'sent' | 'pending'>('all');
   const [employeeDivisionFilter, setEmployeeDivisionFilter] = useState<string>('all');
+  const [employeeFaceFilter, setEmployeeFaceFilter] = useState<'all' | 'registered' | 'unregistered'>('all');
   const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [resendSuccessAlert, setResendSuccessAlert] = useState<string | null>(null);
+  const [resettingFaceId, setResettingFaceId] = useState<string | null>(null);
 
   const fetchEmployees = async () => {
     setEmployeesLoading(true);
@@ -141,6 +177,36 @@ function HrDashboardContent() {
       alert(err.response?.data?.message || 'Gagal mengirim undangan');
     } finally {
       setResendingId(null);
+    }
+  };
+
+  const handleResetFace = async (employeeId?: string, employeeName?: string, role?: string) => {
+    const targetId = employeeId || user?.id;
+    if (!targetId) {
+      alert('ID pengguna tidak valid');
+      return;
+    }
+    const targetName = employeeName || user?.fullName || 'Pengguna';
+    const targetRole = role || user?.role || 'staff';
+    const isSelf = user?.id === targetId;
+
+    const confirmText = isSelf
+      ? 'Apakah Anda yakin ingin mereset master biometrik wajah Anda sendiri? Anda akan diminta mendaftarkan ulang wajah Anda saat presensi berikutnya.'
+      : `Apakah Anda yakin ingin mereset master biometrik wajah milik ${targetName} (${targetRole.toUpperCase()})? Karyawan/Admin ini akan diwajibkan mendaftarkan ulang wajahnya saat login/presensi berikutnya.`;
+
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
+    setResettingFaceId(targetId);
+    try {
+      const res = await api.patch(`/auth/reset-face/${targetId}`);
+      alert(res.data?.message || `Master wajah ${targetName} berhasil di-reset!`);
+      await fetchEmployees();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Gagal mereset master biometrik wajah');
+    } finally {
+      setResettingFaceId(null);
     }
   };
 
@@ -268,17 +334,17 @@ function HrDashboardContent() {
         period: 'today',
       };
 
-      const [attRes, corrRes, alertRes, trendRes] = await Promise.all([
+      const [attRes, corrRes, alertRes, trendRes] = await Promise.allSettled([
         api.get('/analytics/attendance-today', { params }),
         api.get('/analytics/correlation', { params }),
         api.get('/analytics/alerts'),
-        api.get('/analytics/division-sentiment', { params })
+        api.get('/analytics/division-sentiment', { params }),
       ]);
 
-      setAttendanceData(attRes.data);
-      setCorrelationData(corrRes.data);
-      setAlerts(alertRes.data);
-      setSentimentTrends(trendRes.data);
+      if (attRes.status === 'fulfilled') setAttendanceData(attRes.value.data);
+      if (corrRes.status === 'fulfilled') setCorrelationData(corrRes.value.data);
+      if (alertRes.status === 'fulfilled') setAlerts(alertRes.value.data);
+      if (trendRes.status === 'fulfilled') setSentimentTrends(trendRes.value.data);
     } catch (err) {
       console.error('Failed to load dashboard data', err);
     } finally {
@@ -301,6 +367,12 @@ function HrDashboardContent() {
   useEffect(() => {
     fetchDashboardData(selectedDivision);
   }, [selectedDivision]);
+
+  useEffect(() => {
+    if (sidebarNav === 'attendance' || sidebarNav === 'overview') {
+      fetchDashboardData(selectedDivision);
+    }
+  }, [sidebarNav]);
 
   useEffect(() => {
     fetchDivisions();
@@ -383,6 +455,113 @@ function HrDashboardContent() {
     }
   };
 
+  const handleEditDivision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDivision || !editDivisionName.trim()) return;
+    setEditDivisionLoading(true);
+    setEditDivisionMsg(null);
+    try {
+      const res = await api.patch(`/auth/divisions/${editingDivision.id}`, {
+        name: editDivisionName.trim(),
+      });
+      setEditDivisionMsg({ type: 'success', text: res.data?.message || 'Nama divisi berhasil diperbarui!' });
+      await fetchDivisions();
+      await fetchEmployees();
+      setTimeout(() => {
+        setEditingDivision(null);
+        setEditDivisionMsg(null);
+      }, 1200);
+    } catch (err: any) {
+      setEditDivisionMsg({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal memperbarui nama divisi',
+      });
+    } finally {
+      setEditDivisionLoading(false);
+    }
+  };
+
+  const handleDeleteDivision = async () => {
+    if (!deletingDivision) return;
+    setDeleteDivisionLoading(true);
+    try {
+      const res = await api.delete(`/auth/divisions/${deletingDivision.id}`);
+      alert(res.data?.message || 'Divisi berhasil dihapus!');
+      setDeletingDivision(null);
+      await fetchDivisions();
+      await fetchEmployees();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Gagal menghapus divisi');
+    } finally {
+      setDeleteDivisionLoading(false);
+    }
+  };
+
+  const handleReassignDivision = async (employeeId: string, divId: string) => {
+    setReassignLoading(true);
+    setReassignMsg(null);
+    try {
+      const res = await api.patch(`/auth/employees/${employeeId}/division`, {
+        divisionId: divId || null,
+      });
+      setReassignMsg({ type: 'success', text: res.data?.message || 'Divisi staf berhasil dipindahkan!' });
+      await fetchEmployees();
+      await fetchDivisions();
+      setTimeout(() => {
+        setReassignModal(null);
+        setReassignMsg(null);
+      }, 1000);
+    } catch (err: any) {
+      setReassignMsg({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal mengubah divisi karyawan',
+      });
+    } finally {
+      setReassignLoading(false);
+    }
+  };
+
+  const handleQuickAssignStaffToDivision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickAssignDivision || !selectedStaffIdToAssign) return;
+    setQuickAssignLoading(true);
+    setQuickAssignMsg(null);
+    try {
+      const res = await api.patch(`/auth/employees/${selectedStaffIdToAssign}/division`, {
+        divisionId: quickAssignDivision.id,
+      });
+      setQuickAssignMsg({ type: 'success', text: `Staf berhasil ditugaskan ke divisi "${quickAssignDivision.name}"!` });
+      await fetchEmployees();
+      await fetchDivisions();
+      setTimeout(() => {
+        setQuickAssignDivision(null);
+        setSelectedStaffIdToAssign('');
+        setQuickAssignMsg(null);
+      }, 1200);
+    } catch (err: any) {
+      setQuickAssignMsg({
+        type: 'error',
+        text: err.response?.data?.message || 'Gagal menugaskan staf ke divisi ini',
+      });
+    } finally {
+      setQuickAssignLoading(false);
+    }
+  };
+
+  const handleDeleteEmployee = async (employeeId: string, employeeName: string) => {
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus karyawan "${employeeName}"? Riwayat presensi dan jadwal shift karyawan ini juga akan dihapus.`)) {
+      return;
+    }
+    try {
+      const res = await api.delete(`/auth/employees/${employeeId}`);
+      alert(res.data?.message || `Karyawan "${employeeName}" berhasil dihapus.`);
+      await fetchEmployees();
+      await fetchDivisions();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Gagal menghapus karyawan');
+    }
+  };
+
   const formatDateTime = (dateString?: string | null) => {
     if (!dateString) return '-';
     try {
@@ -444,26 +623,28 @@ function HrDashboardContent() {
     return 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800/60';
   };
 
-  const filteredPresentList = attendanceData?.presentList.filter((item: any) =>
-    item.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.divisionName.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  const filteredPresentList = (attendanceData?.presentList || []).filter((item: any) =>
+    (item?.fullName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item?.divisionName || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const filteredAbsentList = attendanceData?.absentList.filter((item: any) =>
-    item.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.divisionName.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  const filteredAbsentList = (attendanceData?.absentList || []).filter((item: any) =>
+    (item?.fullName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item?.divisionName || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const filteredEmployeesList = (employeesData?.employees || []).filter((emp: any) => {
     const matchesStatus = employeeStatusFilter === 'all' || emp.inviteStatus === employeeStatusFilter;
     const matchesDivision = employeeDivisionFilter === 'all' || emp.divisionId === employeeDivisionFilter;
+    const matchesFace = employeeFaceFilter === 'all' || 
+      (employeeFaceFilter === 'registered' ? emp.hasFaceDescriptor : !emp.hasFaceDescriptor);
     const query = employeeSearchTerm.toLowerCase().trim();
     const matchesSearch = !query ||
       emp.fullName?.toLowerCase().includes(query) ||
       emp.email?.toLowerCase().includes(query) ||
       emp.inviteCode?.toLowerCase().includes(query) ||
       emp.division?.name?.toLowerCase().includes(query);
-    return matchesStatus && matchesDivision && matchesSearch;
+    return matchesStatus && matchesDivision && matchesFace && matchesSearch;
   });
 
   const formatDateOnly = (dateString?: string | null) => {
@@ -617,6 +798,25 @@ function HrDashboardContent() {
 
                   <button
                     type="button"
+                    onClick={() => { setSidebarNav('employees'); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
+                      sidebarNav === 'employees'
+                        ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Users className={cn("h-4 w-4 shrink-0", sidebarNav === 'employees' ? "text-sky-500" : "text-slate-400")} />
+                      <span>Data Seluruh Karyawan</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                      {employeesData.stats.total}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => { setSidebarNav('attendance'); setMobileMenuOpen(false); }}
                     className={cn(
                       "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150",
@@ -700,6 +900,18 @@ function HrDashboardContent() {
                     <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-500" />
                     <span>Log Riwayat & Ekspor</span>
                   </Link>
+
+                  <Link
+                    href="/checkin"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 border border-sky-200 dark:border-sky-800/80 transition-colors mt-2"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <ScanFace className="h-4 w-4 text-sky-500" />
+                      <span>Presensi Harian (Wajib HR/Admin)</span>
+                    </div>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  </Link>
                 </nav>
               </div>
 
@@ -768,6 +980,24 @@ function HrDashboardContent() {
             >
               <BarChart3 className={cn("h-4 w-4 shrink-0", sidebarNav === 'overview' ? "text-sky-500" : "text-slate-400")} />
               <span>Overview Ringkasan</span>
+            </button>
+
+            <button
+              onClick={() => setSidebarNav('employees')}
+              className={cn(
+                "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors duration-150 cursor-pointer",
+                sidebarNav === 'employees'
+                  ? "bg-sky-50 dark:bg-slate-800 text-sky-700 dark:text-white shadow-sm border border-sky-200 dark:border-slate-700"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50 border border-transparent"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <Users className={cn("h-4 w-4 shrink-0", sidebarNav === 'employees' ? "text-sky-500" : "text-slate-400")} />
+                <span>Data Seluruh Karyawan</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                {employeesData.stats.total}
+              </span>
             </button>
 
             <button
@@ -851,6 +1081,17 @@ function HrDashboardContent() {
               <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-500" />
               <span>Log Riwayat & Ekspor</span>
             </Link>
+
+            <Link
+              href="/checkin"
+              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 border border-sky-200 dark:border-sky-800/80 transition-colors duration-150 mt-2"
+            >
+              <div className="flex items-center gap-2.5">
+                <ScanFace className="h-4 w-4 text-sky-500" />
+                <span>Presensi Harian (Wajib HR/Admin)</span>
+              </div>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+            </Link>
           </nav>
         </div>
 
@@ -898,19 +1139,21 @@ function HrDashboardContent() {
           <div>
             <h1 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
               {sidebarNav === 'overview' && 'Overview Evaluasi Klinik'}
+              {sidebarNav === 'employees' && 'Direktori & Data Seluruh Karyawan'}
               {sidebarNav === 'attendance' && 'Absensi & Kehadiran Karyawan'}
               {sidebarNav === 'psychological' && 'Iklim Psikologis & Sentimen Tim'}
               {sidebarNav === 'leaves' && 'Manajemen Izin & Cuti Karyawan'}
               {sidebarNav === 'schedules' && 'Manajemen Jadwal Shift & Tukar Shift'}
-              {sidebarNav === 'management' && 'Pusat Manajemen HR & Klinik'}
+              {sidebarNav === 'management' && 'Pusat Manajemen HR & Divisi Klinik'}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {sidebarNav === 'overview' && 'Analisis korelasi absensi tim dan tren iklim mental kolektif real-time.'}
+              {sidebarNav === 'employees' && 'Pantau seluruh staf klinik, status master biometrik wajah, penempatan divisi, dan kode login.'}
               {sidebarNav === 'attendance' && 'Log kehadiran harian karyawan terdaftar beserta status absensi.'}
               {sidebarNav === 'psychological' && 'Data tren kesehatan mental kolektif terenkripsi & anonim.'}
               {sidebarNav === 'leaves' && 'Verifikasi permohonan izin cuti staf klinik, berikan persetujuan (ACC) atau penolakan beserta catatan admin.'}
-              {sidebarNav === 'schedules' && 'Setup jadwal operasional klinik (PAGI 08:30-17:00 / SIANG 10:30-19:00) dan ACC tukar shift.'}
-              {sidebarNav === 'management' && 'Kelola profil HR, tambah admin, tambah divisi, dan undang karyawan via email.'}
+              {sidebarNav === 'schedules' && 'Atur jadwal shift operasional klinik (Pagi, Siang, Long Shift, Libur OFF) sesuai kuota bulanan.'}
+              {sidebarNav === 'management' && 'Kelola profil HR, tambah admin, tambah/edit/hapus divisi klinik, serta pastikan minimal 1 staf per divisi.'}
             </p>
           </div>
 
@@ -1073,7 +1316,18 @@ function HrDashboardContent() {
                         className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-sky-500 text-slate-900 dark:text-white text-xs rounded-xl pl-9 pr-4 py-2 outline-none transition-colors placeholder-slate-400 dark:placeholder-slate-500"
                       />
                     </div>
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Log Absensi Real-time</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => fetchDashboardData(selectedDivision)}
+                        disabled={loading}
+                        className="px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                        title="Segarkan data absensi terkini"
+                      >
+                        <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin text-sky-500")} />
+                        <span>Segarkan</span>
+                      </button>
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400 hidden sm:inline">Log Absensi Real-time</span>
+                    </div>
                   </div>
 
                   {/* Table Present List */}
@@ -1095,8 +1349,8 @@ function HrDashboardContent() {
                           Tidak ada data karyawan hadir
                         </p>
                       ) : (
-                        filteredPresentList.map((row: any) => (
-                          <div key={`m-present-${row.id}`} className="py-3.5 space-y-2">
+                        filteredPresentList.map((row: any, idx: number) => (
+                          <div key={`m-present-${row.id || row.userId || idx}`} className="py-3.5 space-y-2">
                             <div className="flex items-start justify-between gap-2">
                               <div>
                                 <h4 className="font-bold text-slate-900 dark:text-white text-xs">{row.fullName}</h4>
@@ -1119,11 +1373,11 @@ function HrDashboardContent() {
                               </div>
                               <div>
                                 <span className="text-[10px] text-slate-400 block font-medium">Check-out</span>
-                                <span className="font-mono font-bold">{row.checkoutTime ? new Date(row.checkoutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
+                                <span className="font-mono font-bold">{row.checkOutTime || row.checkoutTime ? new Date(row.checkOutTime || row.checkoutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
                               </div>
                               <div>
                                 <span className="text-[10px] text-slate-400 block font-medium">Jarak GPS</span>
-                                <span className="font-mono font-bold">{row.distanceMeters}m</span>
+                                <span className="font-mono font-bold">{row.distanceMeters !== undefined ? `${row.distanceMeters}m` : '-'}</span>
                               </div>
                             </div>
                           </div>
@@ -1152,13 +1406,13 @@ function HrDashboardContent() {
                               </td>
                             </tr>
                           ) : (
-                            filteredPresentList.map((row: any) => (
-                              <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                            filteredPresentList.map((row: any, idx: number) => (
+                              <tr key={row.id || row.userId || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                                 <td className="py-3 pr-4 font-semibold text-slate-900 dark:text-white">{row.fullName}</td>
                                 <td className="py-3 px-4 text-slate-600 dark:text-slate-300">{row.divisionName}</td>
                                 <td className="py-3 px-4 font-mono">{row.checkInTime ? new Date(row.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
-                                <td className="py-3 px-4 font-mono">{row.checkoutTime ? new Date(row.checkoutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
-                                <td className="py-3 px-4 font-mono">{row.distanceMeters}m</td>
+                                <td className="py-3 px-4 font-mono">{row.checkOutTime || row.checkoutTime ? new Date(row.checkOutTime || row.checkoutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
+                                <td className="py-3 px-4 font-mono">{row.distanceMeters !== undefined ? `${row.distanceMeters}m` : '-'}</td>
                                 <td className="py-3 pl-4">
                                   <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
                                     row.lateMinutes > 0
@@ -1195,8 +1449,8 @@ function HrDashboardContent() {
                           Semua karyawan sudah absen hari ini
                         </p>
                       ) : (
-                        filteredAbsentList.map((row: any) => (
-                          <div key={`m-absent-${row.id}`} className="py-3 flex items-center justify-between">
+                        filteredAbsentList.map((row: any, idx: number) => (
+                          <div key={`m-absent-${row.id || row.userId || idx}`} className="py-3 flex items-center justify-between">
                             <div>
                               <h4 className="font-bold text-slate-900 dark:text-white text-xs">{row.fullName}</h4>
                               <p className="text-[11px] text-slate-500 dark:text-slate-400">{row.divisionName}</p>
@@ -1227,8 +1481,8 @@ function HrDashboardContent() {
                               </td>
                             </tr>
                           ) : (
-                            filteredAbsentList.map((row: any) => (
-                              <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                            filteredAbsentList.map((row: any, idx: number) => (
+                              <tr key={row.id || row.userId || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                                 <td className="py-3 pr-4 font-semibold text-slate-900 dark:text-white">{row.fullName}</td>
                                 <td className="py-3 px-4 text-slate-600 dark:text-slate-300">{row.divisionName}</td>
                                 <td className="py-3 pl-4">
@@ -1491,136 +1745,16 @@ function HrDashboardContent() {
                 </motion.div>
               )}
 
-              {/* SECTION 4: MANAJEMEN HR & ORGANISASI HUB */}
-              {sidebarNav === 'management' && (
+              {/* SECTION 4: DATA SELURUH KARYAWAN KLINIK */}
+              {sidebarNav === 'employees' && (
                 <motion.div
-                  key="management"
+                  key="employees"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
                   className="space-y-6"
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Management Card 1: Edit Profil HR */}
-                    <div className="saas-card p-5 flex flex-col justify-between saas-card-interactive">
-                      <div>
-                        <div className="h-10 w-10 rounded-xl bg-sky-50 dark:bg-sky-950 border border-sky-200 dark:border-sky-800 flex items-center justify-center text-sky-600 dark:text-sky-400 mb-3">
-                          <User className="h-5 w-5" />
-                        </div>
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Profil Saya (HR Admin)</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          Perbarui data nama lengkap, alamat email aktif, dan kata sandi HR.
-                        </p>
-
-                        <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs space-y-1">
-                          <p className="text-slate-500 dark:text-slate-400">Nama: <span className="text-slate-900 dark:text-white font-semibold">{user?.fullName}</span></p>
-                          <p className="text-slate-500 dark:text-slate-400">Email: <span className="text-slate-900 dark:text-white font-semibold">{user?.email}</span></p>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          setProfileName(user?.fullName || '');
-                          setProfileEmail(user?.email || '');
-                          setProfilePassword('');
-                          setProfileMsg(null);
-                          setShowProfileModal(true);
-                        }}
-                        className="w-full mt-5 py-2.5 rounded-xl saas-button text-slate-800 dark:text-white text-xs font-semibold flex items-center justify-center gap-2"
-                      >
-                        <User className="h-4 w-4 text-sky-500 dark:text-sky-400" />
-                        <span>Edit Profil HR</span>
-                      </button>
-                    </div>
-
-                    {/* Management Card 2: Tambah Admin HR Baru */}
-                    <div className="saas-card p-5 flex flex-col justify-between saas-card-interactive">
-                      <div>
-                        <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 flex items-center justify-center text-purple-600 dark:text-purple-400 mb-3">
-                          <UserPlus className="h-5 w-5" />
-                        </div>
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Tambah Admin HR Baru</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          Berikan hak akses administrator/HR kepada staf tambahan di organisasi Anda.
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          setAdminName('');
-                          setAdminEmail('');
-                          setAdminPassword('');
-                          setAdminMsg(null);
-                          setShowAddAdminModal(true);
-                        }}
-                        className="w-full mt-5 py-2.5 rounded-xl saas-button text-slate-800 dark:text-white text-xs font-semibold flex items-center justify-center gap-2"
-                      >
-                        <UserPlus className="h-4 w-4 text-purple-500 dark:text-purple-400" />
-                        <span>Tambah Admin HR</span>
-                      </button>
-                    </div>
-
-                    {/* Management Card 3: Tambah Divisi Baru */}
-                    <div className="saas-card p-5 flex flex-col justify-between saas-card-interactive">
-                      <div>
-                        <div className="h-10 w-10 rounded-xl bg-teal-50 dark:bg-teal-950 border border-teal-200 dark:border-teal-800 flex items-center justify-center text-teal-600 dark:text-teal-400 mb-3">
-                          <FolderPlus className="h-5 w-5" />
-                        </div>
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Divisi Organisasi ({divisionsList.length})</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          Buat nama divisi baru secara dinamis untuk pengelompokan karyawan.
-                        </p>
-
-                        <div className="mt-3 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                          {divisionsList.map((d) => (
-                            <span key={d.id} className="text-[11px] font-medium px-2 py-0.5 rounded bg-teal-50 dark:bg-teal-950/80 border border-teal-200 dark:border-teal-800/60 text-teal-700 dark:text-teal-300">
-                              {d.name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          setDivisionNameInput('');
-                          setDivisionMsg(null);
-                          setShowAddDivisionModal(true);
-                        }}
-                        className="w-full mt-5 py-2.5 rounded-xl saas-button text-slate-800 dark:text-white text-xs font-semibold flex items-center justify-center gap-2"
-                      >
-                        <FolderPlus className="h-4 w-4 text-teal-500 dark:text-teal-400" />
-                        <span>Tambah Divisi Baru</span>
-                      </button>
-                    </div>
-
-                    {/* Management Card 4: Undang Karyawan via Email */}
-                    <div className="saas-card p-5 flex flex-col justify-between saas-card-interactive">
-                      <div>
-                        <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-3">
-                          <Mail className="h-5 w-5" />
-                        </div>
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Undang Karyawan Baru</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          Kirimkan email undangan berisi Kode Pendaftaran Organisasi ke email aktif karyawan.
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          setInviteName('');
-                          setInviteEmail('');
-                          setInviteResult(null);
-                          setInviteMsg(null);
-                          setShowInviteModal(true);
-                        }}
-                        className="w-full mt-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-sm"
-                      >
-                        <Mail className="h-4 w-4" />
-                        <span>Kirim Undangan Email</span>
-                      </button>
-                    </div>
-                  </div>
 
                   {/* Alert Berhasil Kirim Ulang */}
                   {resendSuccessAlert && (
@@ -1691,8 +1825,8 @@ function HrDashboardContent() {
                       </div>
                     </div>
 
-                    {/* 4 Kartu Metrik Status Karyawan */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* 5 Kartu Metrik Status Karyawan & Biometrik */}
+                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                       {/* Kartu 1: Total */}
                       <button
                         type="button"
@@ -1788,6 +1922,18 @@ function HrDashboardContent() {
                         </p>
                         <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Draft akun karyawan baru</p>
                       </button>
+
+                      {/* Kartu 5: Master Wajah Terdaftar */}
+                      <div className="p-3.5 rounded-2xl text-left bg-sky-50/80 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/80 shadow-sm col-span-2 lg:col-span-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Biometrik Wajah</span>
+                          <ScanFace className="h-4 w-4 text-sky-500" />
+                        </div>
+                        <p className="text-2xl font-black text-sky-800 dark:text-sky-200">
+                          {employeesData.stats.withFace || 0}
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Wajah terverifikasi 128-d</p>
+                      </div>
                     </div>
 
                     {/* Filter Bar & Pencarian */}
@@ -2002,6 +2148,42 @@ function HrDashboardContent() {
                                   </div>
                                 </div>
 
+                                {/* Status Master Biometrik Wajah */}
+                                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-7 w-7 rounded-lg bg-sky-50 dark:bg-sky-950/80 border border-sky-200 dark:border-sky-800 flex items-center justify-center text-sky-600 dark:text-sky-400 shrink-0">
+                                      <ScanFace className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Master Biometrik</p>
+                                      {emp.hasFaceDescriptor ? (
+                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                                          <span>Terdaftar (128-d)</span>
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                                          <Lock className="h-3 w-3 text-amber-500" />
+                                          <span>Belum Ada (Wajib 1x)</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {emp.hasFaceDescriptor && (
+                                    <button
+                                      type="button"
+                                      disabled={resettingFaceId === emp.id}
+                                      onClick={() => handleResetFace(emp.id, emp.fullName, emp.role)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-semibold text-[10px] inline-flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                                      title={`Reset master biometrik wajah ${emp.fullName}`}
+                                    >
+                                      <RotateCcw className={cn("h-3 w-3", resettingFaceId === emp.id && "animate-spin")} />
+                                      <span>Reset Wajah</span>
+                                    </button>
+                                  )}
+                                </div>
+
                                 {/* Footer Kartu: Tanggal Terakhir & Tombol Aksi */}
                                 <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                                   <span className="text-[10px] text-slate-400 font-medium">
@@ -2063,6 +2245,7 @@ function HrDashboardContent() {
                               <th className="py-3 px-4">Karyawan</th>
                               <th className="py-3 px-4">Divisi Klinik</th>
                               <th className="py-3 px-4">Kode Undangan Unik</th>
+                              <th className="py-3 px-4">Master Biometrik Wajah</th>
                               <th className="py-3 px-4">Status Undangan & Akun</th>
                               <th className="py-3 px-4">Waktu Terakhir</th>
                               <th className="py-3 px-4 text-center">Tindakan</th>
@@ -2071,7 +2254,7 @@ function HrDashboardContent() {
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 bg-white dark:bg-slate-950/40">
                             {employeesLoading ? (
                               <tr>
-                                <td colSpan={6} className="py-12 text-center text-slate-500">
+                                <td colSpan={7} className="py-12 text-center text-slate-500">
                                   <div className="flex flex-col items-center justify-center gap-2">
                                     <RefreshCw className="h-5 w-5 animate-spin text-indigo-500" />
                                     <p className="text-xs">Memuat data seluruh karyawan...</p>
@@ -2080,7 +2263,7 @@ function HrDashboardContent() {
                               </tr>
                             ) : filteredEmployeesList.length === 0 ? (
                               <tr>
-                                <td colSpan={6} className="py-12 text-center text-slate-500">
+                                <td colSpan={7} className="py-12 text-center text-slate-500">
                                   <div className="flex flex-col items-center justify-center gap-2">
                                     <Users className="h-8 w-8 text-slate-400 stroke-[1.5]" />
                                     <p className="font-semibold text-slate-700 dark:text-slate-300">Tidak ada data karyawan yang cocok</p>
@@ -2137,10 +2320,29 @@ function HrDashboardContent() {
 
                                     {/* Divisi */}
                                     <td className="py-3.5 px-4">
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
-                                        <Building className="h-3 w-3 text-slate-500" />
-                                        <span>{emp.divisionName || emp.division?.name || 'Tanpa Divisi'}</span>
-                                      </span>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                                          <Building className="h-3 w-3 text-slate-500" />
+                                          <span>{emp.divisionName || emp.division?.name || 'Tanpa Divisi'}</span>
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setReassignModal({
+                                              employeeId: emp.id,
+                                              employeeName: emp.fullName,
+                                              currentDivisionId: emp.divisionId,
+                                              currentDivisionName: emp.divisionName || emp.division?.name || 'Tanpa Divisi',
+                                            });
+                                            setTargetDivisionId(emp.divisionId || '');
+                                            setReassignMsg(null);
+                                          }}
+                                          className="p-1 rounded-md text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                          title="Ubah Divisi Karyawan"
+                                        >
+                                          <Edit2 className="h-3 w-3" />
+                                        </button>
+                                      </div>
                                     </td>
 
                                     {/* Kode Undangan Unik */}
@@ -2165,6 +2367,38 @@ function HrDashboardContent() {
                                         </div>
                                       ) : (
                                         <span className="text-slate-400 italic text-[11px]">-</span>
+                                      )}
+                                    </td>
+
+                                    {/* Master Biometrik Wajah */}
+                                    <td className="py-3.5 px-4">
+                                      {emp.hasFaceDescriptor ? (
+                                        <div className="space-y-1.5">
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                            <ScanFace className="h-3.5 w-3.5 text-emerald-500" />
+                                            Terdaftar (128-d)
+                                          </span>
+                                          <div>
+                                            <button
+                                              type="button"
+                                              disabled={resettingFaceId === emp.id}
+                                              onClick={() => handleResetFace(emp.id, emp.fullName, emp.role)}
+                                              className="px-2 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[10px] font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                                              title={`Reset master biometrik wajah ${emp.fullName}`}
+                                            >
+                                              <RotateCcw className={cn("h-3 w-3", resettingFaceId === emp.id && "animate-spin")} />
+                                              <span>Reset Wajah</span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div>
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60">
+                                            <Lock className="h-3 w-3 text-amber-500" />
+                                            Belum Terdaftar
+                                          </span>
+                                          <p className="text-[10px] text-slate-400 mt-0.5">Wajib didaftarkan saat login 1x</p>
+                                        </div>
                                       )}
                                     </td>
 
@@ -2239,43 +2473,74 @@ function HrDashboardContent() {
                                       )}
                                     </td>
 
-                                    {/* Aksi Kirim / Kirim Ulang */}
+                                    {/* Aksi Kirim / Pindah / Hapus */}
                                     <td className="py-3.5 px-4 text-center">
-                                      <button
-                                        type="button"
-                                        disabled={resendingId === emp.id}
-                                        onClick={() => handleResendInvite(emp.id, emp.fullName)}
-                                        className={cn(
-                                          "px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm transition-all",
-                                          isPending
-                                            ? "bg-indigo-600 hover:bg-indigo-500 text-white"
-                                            : isSent
-                                            ? "bg-amber-100 hover:bg-amber-200 dark:bg-amber-950 dark:hover:bg-amber-900 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800"
-                                            : "saas-button text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
-                                        )}
-                                      >
-                                        {resendingId === emp.id ? (
-                                          <>
+                                      <div className="flex items-center justify-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          disabled={resendingId === emp.id}
+                                          onClick={() => handleResendInvite(emp.id, emp.fullName)}
+                                          className={cn(
+                                            "px-2.5 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 shadow-sm transition-all",
+                                            isPending
+                                              ? "bg-indigo-600 hover:bg-indigo-500 text-white"
+                                              : isSent
+                                              ? "bg-amber-100 hover:bg-amber-200 dark:bg-amber-950 dark:hover:bg-amber-900 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800"
+                                              : "saas-button text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                                          )}
+                                          title="Kirim / Kirim Ulang Undangan"
+                                        >
+                                          {resendingId === emp.id ? (
                                             <RefreshCw className="h-3 w-3 animate-spin" />
-                                            <span>Mengirim...</span>
-                                          </>
-                                        ) : isPending ? (
-                                          <>
-                                            <Send className="h-3 w-3" />
-                                            <span>Kirim Undangan</span>
-                                          </>
-                                        ) : isSent ? (
-                                          <>
-                                            <RefreshCw className="h-3 w-3" />
-                                            <span>Kirim Ulang</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Mail className="h-3 w-3" />
-                                            <span>Kirim Ulang Kode</span>
-                                          </>
+                                          ) : isPending ? (
+                                            <>
+                                              <Send className="h-3 w-3" />
+                                              <span>Undang</span>
+                                            </>
+                                          ) : isSent ? (
+                                            <>
+                                              <RefreshCw className="h-3 w-3" />
+                                              <span>Kirim Ulang</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Mail className="h-3 w-3" />
+                                              <span>Kirim Kode</span>
+                                            </>
+                                          )}
+                                        </button>
+
+                                        {/* Tombol Pindah Divisi Cepat */}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setReassignModal({
+                                              employeeId: emp.id,
+                                              employeeName: emp.fullName,
+                                              currentDivisionId: emp.divisionId,
+                                              currentDivisionName: emp.divisionName || emp.division?.name || 'Tanpa Divisi',
+                                            });
+                                            setTargetDivisionId(emp.divisionId || '');
+                                            setReassignMsg(null);
+                                          }}
+                                          className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors"
+                                          title="Pindahkan ke Divisi Lain"
+                                        >
+                                          <ArrowRightLeft className="h-3.5 w-3.5 text-indigo-500" />
+                                        </button>
+
+                                        {/* Tombol Hapus Karyawan (jika bukan akun sendiri) */}
+                                        {user?.id !== emp.id && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteEmployee(emp.id, emp.fullName)}
+                                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 transition-colors"
+                                            title="Hapus Karyawan"
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </button>
                                         )}
-                                      </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 );
@@ -2295,6 +2560,321 @@ function HrDashboardContent() {
                           <span>Kode undangan unik digunakan karyawan sebagai sandi login awal.</span>
                         </span>
                       </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* SECTION: MANAJEMEN HR & DIVISI KLINIK */}
+              {sidebarNav === 'management' && (
+                <motion.div
+                  key="management"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-6"
+                >
+                  {/* Top 3 Management Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    {/* Management Card 1: Edit Profil HR */}
+                    <div className="saas-card p-5 flex flex-col justify-between saas-card-interactive">
+                      <div>
+                        <div className="h-10 w-10 rounded-xl bg-sky-50 dark:bg-sky-950 border border-sky-200 dark:border-sky-800 flex items-center justify-center text-sky-600 dark:text-sky-400 mb-3">
+                          <User className="h-5 w-5" />
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Profil Saya (HR Admin)</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Perbarui data nama lengkap, alamat email aktif, dan kata sandi HR.
+                        </p>
+
+                        <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs space-y-1">
+                          <p className="text-slate-500 dark:text-slate-400">Nama: <span className="text-slate-900 dark:text-white font-semibold">{user?.fullName}</span></p>
+                          <p className="text-slate-500 dark:text-slate-400">Email: <span className="text-slate-900 dark:text-white font-semibold">{user?.email}</span></p>
+                        </div>
+
+                        {/* Status Master Wajah HR & Reset Mandiri */}
+                        <div className="mt-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ScanFace className="h-4 w-4 text-indigo-500 shrink-0" />
+                            <div>
+                              <p className="font-semibold text-slate-800 dark:text-slate-200">Master Wajah HR</p>
+                              <p className="text-[10px] text-slate-500">Presensi biometrik HR</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={resettingFaceId === user?.id}
+                            onClick={() => handleResetFace(user?.id, user?.fullName, user?.role)}
+                            className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-semibold text-[10px] inline-flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                          >
+                            <RotateCcw className={cn("h-3 w-3", resettingFaceId === user?.id && "animate-spin")} />
+                            <span>Reset Wajah</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setProfileName(user?.fullName || '');
+                          setProfileEmail(user?.email || '');
+                          setProfilePassword('');
+                          setProfileMsg(null);
+                          setShowProfileModal(true);
+                        }}
+                        className="w-full mt-5 py-2.5 rounded-xl saas-button text-slate-800 dark:text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <User className="h-4 w-4 text-sky-500 dark:text-sky-400" />
+                        <span>Edit Profil HR</span>
+                      </button>
+                    </div>
+
+                    {/* Management Card 2: Tambah Admin HR Baru */}
+                    <div className="saas-card p-5 flex flex-col justify-between saas-card-interactive">
+                      <div>
+                        <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 flex items-center justify-center text-purple-600 dark:text-purple-400 mb-3">
+                          <UserPlus className="h-5 w-5" />
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Tambah Admin HR Baru</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Berikan hak akses administrator/HR kepada staf tambahan di organisasi Anda.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setAdminName('');
+                          setAdminEmail('');
+                          setAdminPassword('');
+                          setAdminMsg(null);
+                          setShowAddAdminModal(true);
+                        }}
+                        className="w-full mt-5 py-2.5 rounded-xl saas-button text-slate-800 dark:text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <UserPlus className="h-4 w-4 text-purple-500 dark:text-purple-400" />
+                        <span>Tambah Admin HR</span>
+                      </button>
+                    </div>
+
+                    {/* Management Card 3: Undang Karyawan via Email */}
+                    <div className="saas-card p-5 flex flex-col justify-between saas-card-interactive">
+                      <div>
+                        <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-3">
+                          <Mail className="h-5 w-5" />
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Undang Karyawan Baru</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Kirimkan email undangan berisi Kode Pendaftaran Organisasi ke email aktif karyawan.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setInviteName('');
+                          setInviteEmail('');
+                          setInviteResult(null);
+                          setInviteMsg(null);
+                          setShowInviteModal(true);
+                        }}
+                        className="w-full mt-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                      >
+                        <Mail className="h-4 w-4" />
+                        <span>Kirim Undangan Email</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* SECTION: PUSAT MANAJEMEN DIVISI KLINIK SATIVA */}
+                  <div className="saas-card p-6 space-y-6">
+                    {/* Banner Status Aturan Klinik: Minimal 1 Karyawan per Divisi */}
+                    {(() => {
+                      const zeroDivisions = divisionsList.filter((d) => (d.userCount || 0) < 1);
+                      if (zeroDivisions.length > 0) {
+                        return (
+                          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+                            <div className="flex items-center gap-3">
+                              <div className="h-9 w-9 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+                                <AlertTriangle className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <p className="font-bold text-slate-900 dark:text-white">
+                                  Aturan Klinik: Terdapat {zeroDivisions.length} Divisi Belum Memiliki Karyawan
+                                </p>
+                                <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                                  Setiap divisi klinik diwajibkan memiliki minimal 1 karyawan ({zeroDivisions.map((d) => d.name).join(', ')}). Silakan gunakan tombol &quot;+ Tugaskan Staf&quot; di kartu divisi.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center gap-3 shadow-sm">
+                          <div className="h-9 w-9 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                            <CheckCircle2 className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-900 dark:text-white">
+                              Kuota Divisi Terpenuhi ({divisionsList.length} Divisi Aktif)
+                            </p>
+                            <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+                              Seluruh divisi operasional klinik telah memiliki minimal 1 staf aktif yang bertugas.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Header Divisi */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+                      <div>
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-9 w-9 rounded-xl bg-teal-50 dark:bg-teal-950/80 border border-teal-200 dark:border-teal-800 flex items-center justify-center text-teal-600 dark:text-teal-400">
+                            <Building className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                              Manajemen Divisi Klinik Sativa
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300 font-semibold">
+                                {divisionsList.length} Divisi
+                              </span>
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              Tambah divisi baru, edit nama divisi, hapus divisi kosong, serta pastikan minimal 1 staf bertugas di setiap divisi.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setDivisionNameInput('');
+                          setDivisionMsg(null);
+                          setShowAddDivisionModal(true);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer self-start sm:self-auto"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>+ Tambah Divisi Baru</span>
+                      </button>
+                    </div>
+
+                    {/* Grid Kartu Divisi */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {divisionsList.map((d) => {
+                        const count = d.userCount || 0;
+                        const hasMin = count >= 1;
+
+                        return (
+                          <div
+                            key={d.id}
+                            className={cn(
+                              "p-4 rounded-2xl border transition-all flex flex-col justify-between",
+                              hasMin
+                                ? "bg-white dark:bg-slate-900/80 border-slate-200 dark:border-slate-800"
+                                : "bg-amber-50/40 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/80 shadow-sm"
+                            )}
+                          >
+                            <div>
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="h-8 w-8 rounded-lg bg-teal-100 dark:bg-teal-950 border border-teal-300 dark:border-teal-800 flex items-center justify-center text-teal-700 dark:text-teal-300 font-bold text-xs">
+                                    {d.name.substring(0, 2).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                      {d.name}
+                                    </h4>
+                                  </div>
+                                </div>
+
+                                {/* Badge Kuota Status */}
+                                {hasMin ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                                    <Check className="h-3 w-3" />
+                                    <span>{count} Staf</span>
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 flex items-center gap-1 animate-pulse">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    <span>0 Staf (Wajib Min. 1)</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* List staf yang ada di divisi ini */}
+                              <div className="mt-3 space-y-1.5">
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                                  Staf Bertugas ({count}):
+                                </p>
+                                {d.users && d.users.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                    {d.users.map((u: any) => (
+                                      <span
+                                        key={u.id}
+                                        className="text-[11px] font-medium px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-1"
+                                      >
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                        <span>{u.fullName}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="p-2.5 rounded-xl bg-amber-100/60 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-300 text-[11px]">
+                                    ⚠️ Belum ada staf. Divisi ini membutuhkan minimal 1 karyawan aktif.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Aksi: Edit, Hapus, Tugaskan */}
+                            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingDivision(d);
+                                    setEditDivisionName(d.name);
+                                    setEditDivisionMsg(null);
+                                  }}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/50 transition-colors cursor-pointer"
+                                  title="Edit Nama Divisi"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (count > 0) {
+                                      alert(`Tidak dapat menghapus divisi "${d.name}" karena masih memiliki ${count} staf. Harap pindahkan staf ke divisi lain terlebih dahulu.`);
+                                      return;
+                                    }
+                                    setDeletingDivision(d);
+                                  }}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
+                                  title="Hapus Divisi"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setQuickAssignDivision(d);
+                                  setSelectedStaffIdToAssign('');
+                                  setQuickAssignMsg(null);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/60 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                              >
+                                <UserPlus className="h-3 w-3" />
+                                <span>+ Tugaskan Staf</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </motion.div>
@@ -3793,6 +4373,287 @@ function HrDashboardContent() {
                       </>
                     )}
                   </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* MODAL 7: EDIT NAMA DIVISI */}
+        {editingDivision && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
+                <div className="flex items-center gap-2">
+                  <Edit2 className="h-4 w-4 text-teal-500" />
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Nama Divisi</h3>
+                </div>
+                <button
+                  onClick={() => setEditingDivision(null)}
+                  className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {editDivisionMsg && (
+                <div className={`mb-4 p-3 rounded-xl text-xs font-medium ${
+                  editDivisionMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}>
+                  {editDivisionMsg.text}
+                </div>
+              )}
+
+              <form onSubmit={handleEditDivision} className="space-y-4">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-400 text-xs font-medium mb-1">
+                    Nama Divisi
+                  </label>
+                  <input
+                    type="text"
+                    value={editDivisionName}
+                    onChange={(e) => setEditDivisionName(e.target.value)}
+                    required
+                    placeholder="Contoh: Perawat, Beautician, Front Office, dll."
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-teal-500 text-slate-900 dark:text-white text-xs rounded-xl px-3.5 py-2.5 outline-none transition-colors"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditingDivision(null)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editDivisionLoading}
+                    className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold disabled:opacity-50"
+                  >
+                    {editDivisionLoading ? 'Menyimpan...' : 'Simpan Perubahan'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* MODAL 8: HAPUS DIVISI */}
+        {deletingDivision && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-xl bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-800 flex items-center justify-center text-rose-600 shrink-0">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Hapus Divisi</h3>
+                  <p className="text-xs text-slate-500">Divisi: &quot;{deletingDivision.name}&quot;</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-5">
+                Apakah Anda yakin ingin menghapus divisi <strong>{deletingDivision.name}</strong>? Tindakan ini tidak dapat dibatalkan.
+              </p>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setDeletingDivision(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteDivisionLoading}
+                  onClick={handleDeleteDivision}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold disabled:opacity-50"
+                >
+                  {deleteDivisionLoading ? 'Menghapus...' : 'Ya, Hapus Divisi'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* MODAL 9: PINDAH DIVISI KARYAWAN */}
+        {reassignModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
+                <div className="flex items-center gap-2">
+                  <Building className="h-4 w-4 text-indigo-500" />
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Ubah Divisi Karyawan</h3>
+                </div>
+                <button
+                  onClick={() => setReassignModal(null)}
+                  className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {reassignMsg && (
+                <div className={`mb-4 p-3 rounded-xl text-xs font-medium ${
+                  reassignMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}>
+                  {reassignMsg.text}
+                </div>
+              )}
+
+              <div className="mb-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs space-y-1">
+                <p className="text-slate-500">Karyawan: <strong className="text-slate-900 dark:text-white">{reassignModal.employeeName}</strong></p>
+                <p className="text-slate-500">Divisi Saat Ini: <strong className="text-indigo-600 dark:text-indigo-400">{reassignModal.currentDivisionName}</strong></p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-400 text-xs font-medium mb-1">
+                    Pilih Divisi Baru
+                  </label>
+                  <select
+                    value={targetDivisionId}
+                    onChange={(e) => setTargetDivisionId(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 text-slate-900 dark:text-white text-xs rounded-xl px-3.5 py-2.5 outline-none transition-colors"
+                  >
+                    <option value="">-- Tanpa Divisi --</option>
+                    {divisionsList.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} ({d.userCount || 0} staf)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setReassignModal(null)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={reassignLoading}
+                    onClick={() => handleReassignDivision(reassignModal.employeeId, targetDivisionId)}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-50"
+                  >
+                    {reassignLoading ? 'Menyimpan...' : 'Simpan Divisi'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* MODAL 10: TUGASKAN STAF KE DIVISI (ATURAN 1 DIVISI MIN 1 KARYAWAN) */}
+        {quickAssignDivision && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="saas-card p-6 w-full max-w-md bg-white dark:bg-[#111c27] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 relative shadow-2xl"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-5">
+                <div className="flex items-center gap-2">
+                  <UserPlus className="h-4 w-4 text-teal-500" />
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Tugaskan Staf ke Divisi</h3>
+                </div>
+                <button
+                  onClick={() => setQuickAssignDivision(null)}
+                  className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {quickAssignMsg && (
+                <div className={`mb-4 p-3 rounded-xl text-xs font-medium ${
+                  quickAssignMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}>
+                  {quickAssignMsg.text}
+                </div>
+              )}
+
+              <div className="mb-4 p-3 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 text-xs">
+                <p className="text-teal-800 dark:text-teal-200">
+                  Target Divisi: <strong className="font-bold">{quickAssignDivision.name}</strong>
+                </p>
+                <p className="text-[11px] text-teal-600 dark:text-teal-400 mt-0.5">
+                  Pilih salah satu staf untuk ditugaskan ke divisi ini agar memenuhi aturan minimal 1 karyawan.
+                </p>
+              </div>
+
+              <form onSubmit={handleQuickAssignStaffToDivision} className="space-y-4">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-400 text-xs font-medium mb-1">
+                    Pilih Staf yang Ditugaskan
+                  </label>
+                  <select
+                    value={selectedStaffIdToAssign}
+                    onChange={(e) => setSelectedStaffIdToAssign(e.target.value)}
+                    required
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 focus:border-teal-500 text-slate-900 dark:text-white text-xs rounded-xl px-3.5 py-2.5 outline-none transition-colors"
+                  >
+                    <option value="">-- Pilih Staf --</option>
+                    {(employeesData?.employees || []).map((emp: any) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.fullName} ({emp.divisionName || 'Tanpa Divisi'}) - {emp.role.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const divId = quickAssignDivision.id;
+                      setQuickAssignDivision(null);
+                      setInviteDivisionId(divId);
+                      setShowInviteModal(true);
+                    }}
+                    className="text-xs text-teal-600 dark:text-teal-400 hover:underline font-semibold"
+                  >
+                    + Atau Undang Karyawan Baru
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setQuickAssignDivision(null)}
+                      className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={quickAssignLoading || !selectedStaffIdToAssign}
+                      className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold disabled:opacity-50"
+                    >
+                      {quickAssignLoading ? 'Menugaskan...' : 'Tugaskan Sekarang'}
+                    </button>
+                  </div>
                 </div>
               </form>
             </motion.div>

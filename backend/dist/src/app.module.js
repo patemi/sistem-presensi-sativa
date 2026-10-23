@@ -55,6 +55,7 @@ const office_location_module_1 = require("./office-location/office-location.modu
 const leave_module_1 = require("./leave/leave.module");
 const path = __importStar(require("path"));
 const typeorm_1 = require("@nestjs/typeorm");
+const user_entity_1 = require("./auth/entities/user.entity");
 const schedule_entity_1 = require("./schedule/entities/schedule.entity");
 const shift_swap_request_entity_1 = require("./schedule/entities/shift-swap-request.entity");
 const attendance_entity_1 = require("./attendance/entities/attendance.entity");
@@ -72,7 +73,7 @@ exports.AppModule = AppModule = __decorate([
             typeorm_1.TypeOrmModule.forRoot({
                 type: 'better-sqlite3',
                 database: path.resolve(process.cwd(), 'prisma/dev.db'),
-                entities: [schedule_entity_1.Schedule, shift_swap_request_entity_1.ShiftSwapRequest, attendance_entity_1.Attendance],
+                entities: [user_entity_1.User, schedule_entity_1.Schedule, shift_swap_request_entity_1.ShiftSwapRequest, attendance_entity_1.Attendance],
                 synchronize: false,
             }),
             mailer_1.MailerModule.forRootAsync({
