@@ -21,13 +21,14 @@ import {
   Eye, EyeOff, X, Check, Building, Briefcase, FileSpreadsheet,
   LayoutDashboard, Settings, ChevronRight, Users, Shield, Menu,
   Copy, CalendarCheck, FileText, MessageSquare, ScanFace, RotateCcw,
-  Edit2, Trash2, UserCheck, Plus
+  Edit2, Trash2, UserCheck, Plus, Share2, ExternalLink
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, 
   YAxis, CartesianGrid, Tooltip, Legend 
 } from 'recharts';
 import AdminScheduleManagement from '@/components/schedule/AdminScheduleManagement';
+import { useNotification } from '@/lib/context/NotificationContext';
 
 export default function HrDashboardPage() {
   return (
@@ -40,6 +41,7 @@ export default function HrDashboardPage() {
 function HrDashboardContent() {
   const { user, logout, updateUser } = useAuth();
   const { t, locale } = useTranslation();
+  const { showNotification, showConfirm } = useNotification();
   const router = useRouter();
 
   // Sidebar navigation state
@@ -174,7 +176,11 @@ function HrDashboardContent() {
       await fetchEmployees();
       setTimeout(() => setResendSuccessAlert(null), 8000);
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal mengirim undangan');
+      showNotification({
+        type: 'error',
+        title: 'Gagal Mengirim Undangan',
+        message: err.response?.data?.message || 'Gagal mengirim undangan email ke karyawan.',
+      });
     } finally {
       setResendingId(null);
     }
@@ -183,7 +189,11 @@ function HrDashboardContent() {
   const handleResetFace = async (employeeId?: string, employeeName?: string, role?: string) => {
     const targetId = employeeId || user?.id;
     if (!targetId) {
-      alert('ID pengguna tidak valid');
+      showNotification({
+        type: 'warning',
+        title: 'Pengguna Tidak Ditemukan',
+        message: 'ID pengguna tidak valid atau tidak ditemukan.',
+      });
       return;
     }
     const targetName = employeeName || user?.fullName || 'Pengguna';
@@ -194,26 +204,59 @@ function HrDashboardContent() {
       ? 'Apakah Anda yakin ingin mereset master biometrik wajah Anda sendiri? Anda akan diminta mendaftarkan ulang wajah Anda saat presensi berikutnya.'
       : `Apakah Anda yakin ingin mereset master biometrik wajah milik ${targetName} (${targetRole.toUpperCase()})? Karyawan/Admin ini akan diwajibkan mendaftarkan ulang wajahnya saat login/presensi berikutnya.`;
 
-    if (!window.confirm(confirmText)) {
-      return;
-    }
-
-    setResettingFaceId(targetId);
-    try {
-      const res = await api.patch(`/auth/reset-face/${targetId}`);
-      alert(res.data?.message || `Master wajah ${targetName} berhasil di-reset!`);
-      await fetchEmployees();
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal mereset master biometrik wajah');
-    } finally {
-      setResettingFaceId(null);
-    }
+    showConfirm({
+      type: 'warning',
+      title: 'Reset Master Wajah',
+      message: confirmText,
+      badge: 'Biometrik Keamanan',
+      confirmText: 'Ya, Reset Wajah',
+      cancelText: 'Batal',
+      onConfirm: async () => {
+        setResettingFaceId(targetId);
+        try {
+          const res = await api.patch(`/auth/reset-face/${targetId}`);
+          showNotification({
+            type: 'success',
+            title: 'Reset Master Wajah Berhasil',
+            message: res.data?.message || `Master biometrik wajah ${targetName} berhasil di-reset!`,
+            badge: 'Biometrik Wajah',
+          });
+          await fetchEmployees();
+        } catch (err: any) {
+          showNotification({
+            type: 'error',
+            title: 'Gagal Reset Biometrik',
+            message: err.response?.data?.message || 'Gagal mereset master biometrik wajah karyawan.',
+          });
+        } finally {
+          setResettingFaceId(null);
+        }
+      },
+    });
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedCode(text);
     setTimeout(() => setCopiedCode(null), 2000);
+  };
+
+  const getInviteShareText = (employeeName: string, employeeEmail: string, inviteCode: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const loginLink = `${origin}/login?email=${encodeURIComponent(employeeEmail)}&code=${encodeURIComponent(inviteCode)}`;
+    return `Halo ${employeeName || 'Karyawan SATIVA'},\nAnda telah resmi didaftarkan oleh Tim HR ke sistem presensi klinik SATIVA.\n\nDetail Akun Anda:\n- Email Login: ${employeeEmail}\n- Kode Undangan / Sandi Awal: ${inviteCode}\n- Tautan Login Langsung: ${loginLink}\n\nPetunjuk: Buka tautan di atas untuk langsung masuk dan daftarkan master biometrik wajah Anda saat absensi perdana. (Tips: Jika email resmi belum masuk di Inbox, silakan cek juga folder Spam/Promosi).`;
+  };
+
+  const copyInviteMessage = (employeeName: string, employeeEmail: string, inviteCode: string) => {
+    const text = getInviteShareText(employeeName, employeeEmail, inviteCode);
+    navigator.clipboard.writeText(text);
+    setCopiedCode('msg_' + inviteCode);
+    setTimeout(() => setCopiedCode(null), 2500);
+  };
+
+  const openWhatsAppInvite = (employeeName: string, employeeEmail: string, inviteCode: string) => {
+    const text = getInviteShareText(employeeName, employeeEmail, inviteCode);
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   // Leave Requests (Izin & Cuti) State
@@ -286,7 +329,11 @@ function HrDashboardContent() {
       await fetchLeaves();
       setTimeout(() => setReviewSuccessAlert(null), 6000);
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal memproses permohonan izin/cuti');
+      showNotification({
+        type: 'error',
+        title: 'Gagal Memproses Cuti',
+        message: err.response?.data?.message || 'Gagal memproses permohonan izin/cuti',
+      });
     } finally {
       setReviewLoading(false);
     }
@@ -295,11 +342,19 @@ function HrDashboardContent() {
   const handleCreateLeave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLeaveEmployeeId) {
-      alert('Pilih karyawan terlebih dahulu');
+      showNotification({
+        type: 'warning',
+        title: 'Karyawan Belum Dipilih',
+        message: 'Pilih karyawan terlebih dahulu sebelum membuat permohonan izin/cuti.',
+      });
       return;
     }
     if (!newLeaveStartDate || !newLeaveEndDate) {
-      alert('Pilih tanggal mulai dan tanggal selesai');
+      showNotification({
+        type: 'warning',
+        title: 'Tanggal Belum Lengkap',
+        message: 'Pilih tanggal mulai dan tanggal selesai pengajuan cuti/izin.',
+      });
       return;
     }
     setCreateLeaveLoading(true);
@@ -320,7 +375,11 @@ function HrDashboardContent() {
       await fetchLeaves();
       setTimeout(() => setReviewSuccessAlert(null), 6000);
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal membuat permohonan izin/cuti');
+      showNotification({
+        type: 'error',
+        title: 'Gagal Membuat Permohonan',
+        message: err.response?.data?.message || 'Gagal membuat permohonan izin/cuti karyawan.',
+      });
     } finally {
       setCreateLeaveLoading(false);
     }
@@ -388,7 +447,11 @@ function HrDashboardContent() {
       setCronResult(res.data);
       await fetchDashboardData();
     } catch (err: any) {
-      alert('Gagal menjalankan agregasi: ' + (err.response?.data?.message || err.message));
+      showNotification({
+        type: 'error',
+        title: 'Gagal Menjalankan Agregasi',
+        message: 'Gagal menjalankan agregasi harian: ' + (err.response?.data?.message || err.message),
+      });
     } finally {
       setCronTriggering(false);
     }
@@ -486,12 +549,21 @@ function HrDashboardContent() {
     setDeleteDivisionLoading(true);
     try {
       const res = await api.delete(`/auth/divisions/${deletingDivision.id}`);
-      alert(res.data?.message || 'Divisi berhasil dihapus!');
+      showNotification({
+        type: 'success',
+        title: 'Divisi Berhasil Dihapus',
+        message: res.data?.message || 'Divisi berhasil dihapus dari sistem klinik.',
+        badge: 'Manajemen Divisi',
+      });
       setDeletingDivision(null);
       await fetchDivisions();
       await fetchEmployees();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal menghapus divisi');
+      showNotification({
+        type: 'error',
+        title: 'Gagal Menghapus Divisi',
+        message: err.response?.data?.message || 'Gagal menghapus divisi.',
+      });
     } finally {
       setDeleteDivisionLoading(false);
     }
@@ -549,17 +621,33 @@ function HrDashboardContent() {
   };
 
   const handleDeleteEmployee = async (employeeId: string, employeeName: string) => {
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus karyawan "${employeeName}"? Riwayat presensi dan jadwal shift karyawan ini juga akan dihapus.`)) {
-      return;
-    }
-    try {
-      const res = await api.delete(`/auth/employees/${employeeId}`);
-      alert(res.data?.message || `Karyawan "${employeeName}" berhasil dihapus.`);
-      await fetchEmployees();
-      await fetchDivisions();
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal menghapus karyawan');
-    }
+    showConfirm({
+      type: 'error',
+      title: 'Hapus Akun Karyawan',
+      message: `Apakah Anda yakin ingin menghapus akun karyawan "${employeeName}"?\nSeluruh riwayat presensi dan jadwal shift karyawan ini akan dihapus permanen.`,
+      badge: 'Penghapusan Karyawan',
+      confirmText: 'Ya, Hapus Karyawan',
+      cancelText: 'Batal',
+      onConfirm: async () => {
+        try {
+          const res = await api.delete(`/auth/employees/${employeeId}`);
+          showNotification({
+            type: 'success',
+            title: 'Karyawan Berhasil Dihapus',
+            message: res.data?.message || `Karyawan "${employeeName}" berhasil dihapus dari sistem klinik.`,
+            badge: 'Manajemen Staf',
+          });
+          await fetchEmployees();
+          await fetchDivisions();
+        } catch (err: any) {
+          showNotification({
+            type: 'error',
+            title: 'Gagal Menghapus Karyawan',
+            message: err.response?.data?.message || 'Gagal menghapus karyawan.',
+          });
+        }
+      },
+    });
   };
 
   const formatDateTime = (dateString?: string | null) => {
@@ -597,9 +685,9 @@ function HrDashboardContent() {
       setInviteResult(res.data);
       setInviteMsg({
         type: 'success',
-        text: sendEmailNowCheckbox
+        text: res.data?.message || (sendEmailNowCheckbox
           ? `Undangan & kode unik berhasil dikirimkan ke email ${inviteEmail}!`
-          : `Karyawan berhasil didaftarkan dengan kode unik unik (Email status: Belum Dikirim).`,
+          : `Karyawan berhasil didaftarkan (Email status: Belum Dikirim).`),
       });
       await fetchEmployees();
     } catch (err: any) {
@@ -1761,18 +1849,23 @@ function HrDashboardContent() {
                     <motion.div
                       initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center justify-between shadow-sm"
+                      className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs shadow-sm space-y-2"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        <span className="font-medium">{resendSuccessAlert}</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span className="font-semibold">{resendSuccessAlert}</span>
+                        </div>
+                        <button
+                          onClick={() => setResendSuccessAlert(null)}
+                          className="p-1 rounded text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => setResendSuccessAlert(null)}
-                        className="p-1 rounded text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                      <p className="text-[11px] text-emerald-700/90 dark:text-emerald-300/90 pl-6.5 leading-relaxed">
+                        💡 <strong>Tips Akses Karyawan:</strong> Mintalah karyawan memeriksa folder <strong>Kotak Masuk (Inbox)</strong> serta folder <strong>Spam / Promosi</strong> di Gmail jika pesan belum terlihat di inbox utama. Anda juga dapat menggunakan tombol <strong>"Salin Pesan WA"</strong> pada baris tabel untuk membagikan akun secara langsung.
+                      </p>
                     </motion.div>
                   )}
 
@@ -2348,22 +2441,52 @@ function HrDashboardContent() {
                                     {/* Kode Undangan Unik */}
                                     <td className="py-3.5 px-4">
                                       {emp.inviteCode ? (
-                                        <div className="inline-flex items-center gap-1.5 p-1 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800">
-                                          <span className="font-mono text-xs font-bold text-indigo-700 dark:text-sky-300 px-1.5 tracking-wider">
-                                            {emp.inviteCode}
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => copyToClipboard(emp.inviteCode)}
-                                            className="p-1 rounded hover:bg-white dark:hover:bg-slate-800 text-slate-500 dark:text-slate-300 transition-colors"
-                                            title="Salin Kode Undangan Unik"
-                                          >
-                                            {copiedCode === emp.inviteCode ? (
-                                              <Check className="h-3.5 w-3.5 text-emerald-500" />
-                                            ) : (
-                                              <Copy className="h-3.5 w-3.5" />
-                                            )}
-                                          </button>
+                                        <div className="flex flex-col gap-1.5 items-start">
+                                          <div className="inline-flex items-center gap-1.5 p-1 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800">
+                                            <span className="font-mono text-xs font-bold text-indigo-700 dark:text-sky-300 px-1.5 tracking-wider">
+                                              {emp.inviteCode}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => copyToClipboard(emp.inviteCode)}
+                                              className="p-1 rounded hover:bg-white dark:hover:bg-slate-800 text-slate-500 dark:text-slate-300 transition-colors"
+                                              title="Salin Kode Saja"
+                                            >
+                                              {copiedCode === emp.inviteCode ? (
+                                                <Check className="h-3.5 w-3.5 text-emerald-500" />
+                                              ) : (
+                                                <Copy className="h-3.5 w-3.5" />
+                                              )}
+                                            </button>
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => copyInviteMessage(emp.fullName, emp.email, emp.inviteCode)}
+                                              className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors inline-flex items-center gap-1 shadow-xs"
+                                              title="Salin Pesan Undangan Lengkap (Email + Kode + Link Login)"
+                                            >
+                                              {copiedCode === 'msg_' + emp.inviteCode ? (
+                                                <>
+                                                  <Check className="h-3 w-3 text-emerald-500" />
+                                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Tersalin!</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Share2 className="h-3 w-3 text-indigo-500" />
+                                                  <span>Salin WA</span>
+                                                </>
+                                              )}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => openWhatsAppInvite(emp.fullName, emp.email, emp.inviteCode)}
+                                              className="p-1 rounded text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors"
+                                              title="Buka & Kirim langsung via WhatsApp"
+                                            >
+                                              <MessageSquare className="h-3 w-3" />
+                                            </button>
+                                          </div>
                                         </div>
                                       ) : (
                                         <span className="text-slate-400 italic text-[11px]">-</span>
@@ -2847,7 +2970,13 @@ function HrDashboardContent() {
                                   type="button"
                                   onClick={() => {
                                     if (count > 0) {
-                                      alert(`Tidak dapat menghapus divisi "${d.name}" karena masih memiliki ${count} staf. Harap pindahkan staf ke divisi lain terlebih dahulu.`);
+                                      showNotification({
+                                        type: 'warning',
+                                        title: 'Divisi Masih Memiliki Staf',
+                                        message: `Tidak dapat menghapus divisi "${d.name}" karena masih memiliki ${count} staf. Harap pindahkan staf ke divisi lain terlebih dahulu.`,
+                                        badge: 'Validasi Organisasi',
+                                        confirmText: 'Saya Mengerti',
+                                      });
                                       return;
                                     }
                                     setDeletingDivision(d);
@@ -3843,21 +3972,62 @@ function HrDashboardContent() {
                       <span className="font-mono text-base font-bold text-indigo-600 dark:text-sky-300 tracking-widest">
                         {inviteResult.inviteCode}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(inviteResult.inviteCode);
-                          alert('Kode undangan berhasil disalin ke clipboard!');
-                        }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-[11px] font-semibold text-white transition-all shadow-sm"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                        <span>Salin</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(inviteResult.inviteCode);
+                            showNotification({
+                              type: 'success',
+                              title: 'Kode Undangan Disalin',
+                              message: 'Kode undangan berhasil disalin ke clipboard!',
+                              badge: 'Clipboard',
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-[11px] font-semibold text-white transition-all shadow-sm"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          <span>Salin Kode</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            copyInviteMessage(inviteName, inviteEmail, inviteResult.inviteCode);
+                            showNotification({
+                              type: 'success',
+                              title: 'Pesan Undangan Disalin',
+                              message: 'Format pesan undangan WhatsApp berhasil disalin ke clipboard!',
+                              badge: 'WhatsApp Share',
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200 transition-all border border-slate-300 dark:border-slate-700"
+                        >
+                          <Share2 className="h-3.5 w-3.5 text-indigo-500" />
+                          <span>Salin Pesan WA</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openWhatsAppInvite(inviteName, inviteEmail, inviteResult.inviteCode)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-[11px] font-semibold text-white transition-all shadow-sm"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          <span>Kirim via WA</span>
+                        </button>
+                      </div>
                     </div>
                     <p className="text-[11px] text-slate-600 dark:text-slate-400">
                       Akun karyawan untuk <strong className="text-slate-900 dark:text-white">{inviteName || inviteEmail}</strong> telah dibuat. Karyawan dapat langsung masuk pada halaman Login dengan email dan kode di atas.
                     </p>
+
+                    <div className="mt-2 p-2.5 rounded-lg bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-800 dark:text-amber-300 space-y-1">
+                      <p className="font-semibold flex items-center gap-1.5">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span>Panduan Akses Email Karyawan:</span>
+                      </p>
+                      <p className="leading-relaxed">
+                        Undangan resmi telah dikirim ke <strong>{inviteEmail}</strong>. Jika belum muncul di Kotak Masuk utama, minta karyawan mengecek folder <strong>Spam</strong> atau <strong>Promosi</strong> di Gmail lalu klik <em>"Bukan Spam"</em>.
+                      </p>
+                    </div>
                   </div>
 
                   <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white space-y-2">

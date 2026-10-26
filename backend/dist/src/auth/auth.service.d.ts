@@ -5,6 +5,7 @@ export declare class AuthService {
     private prisma;
     private jwtService;
     private emailService;
+    private readonly logger;
     constructor(prisma: PrismaService, jwtService: JwtService, emailService: EmailService);
     validateUser(email: string, pass: string): Promise<any>;
     login(user: any): Promise<{
@@ -199,6 +200,7 @@ export declare class AuthService {
             inviteStatus: string;
             invitedAt: Date | null;
         };
+        emailContent: any;
         previewUrl: any;
     }>;
     createDivision(currentUserId: string, name: string): Promise<{

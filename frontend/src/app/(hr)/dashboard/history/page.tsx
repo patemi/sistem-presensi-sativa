@@ -17,6 +17,7 @@ import {
   TrendingUp, Download
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useNotification } from '@/lib/context/NotificationContext';
 
 export default function HrHistoryPage() {
   return (
@@ -29,6 +30,7 @@ export default function HrHistoryPage() {
 function HrHistoryContent() {
   const { user, logout } = useAuth();
   const { t, locale } = useTranslation();
+  const { showNotification } = useNotification();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<'attendance' | 'psychological'>('attendance');
@@ -140,7 +142,12 @@ function HrHistoryContent() {
       XLSX.writeFile(wb, filename);
     } catch (err) {
       console.error('Failed to export excel file', err);
-      alert('Gagal mengekspor laporan ke Excel');
+      showNotification({
+        type: 'error',
+        title: 'Ekspor Gagal',
+        message: 'Gagal mengekspor laporan ke file Excel. Silakan periksa data atau coba beberapa saat lagi.',
+        badge: 'Laporan Excel',
+      });
     }
   };
 

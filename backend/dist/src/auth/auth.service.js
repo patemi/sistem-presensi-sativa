@@ -41,6 +41,7 @@ var __importStar = (this && this.__importStar) || (function () {
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var AuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
@@ -49,10 +50,11 @@ const jwt_1 = require("@nestjs/jwt");
 const email_service_1 = require("./email.service");
 const bcrypt = __importStar(require("bcryptjs"));
 const biometric_util_1 = require("../common/utils/biometric.util");
-let AuthService = class AuthService {
+let AuthService = AuthService_1 = class AuthService {
     prisma;
     jwtService;
     emailService;
+    logger = new common_1.Logger(AuthService_1.name);
     constructor(prisma, jwtService, emailService) {
         this.prisma = prisma;
         this.jwtService = jwtService;
@@ -276,6 +278,31 @@ let AuthService = class AuthService {
             const newUniqueCode = await this.generateUniqueInviteCode(existing.inviteCode);
             const newPasswordHash = bcrypt.hashSync(newUniqueCode, 10);
             const shouldSend = data.sendEmailNow !== false;
+            let emailRes = null;
+            let targetStatus = existing.inviteStatus;
+            let targetInvitedAt = existing.invitedAt;
+            if (shouldSend) {
+                try {
+                    emailRes = await this.emailService.sendEmployeeInviteEmail({
+                        toEmail: data.email,
+                        employeeName: data.fullName || existing.fullName,
+                        organizationName: currentUser.organization.name,
+                        divisionName: existing.division?.name || division.name,
+                        inviteCode: newUniqueCode,
+                    });
+                    targetStatus = 'sent';
+                    targetInvitedAt = new Date();
+                }
+                catch (err) {
+                    this.logger.error(`Gagal mengirim email undangan ke ${data.email}: ${err.message}`);
+                    emailRes = {
+                        success: false,
+                        message: `Peringatan: Gagal mengirim email via SMTP (${err.message}). Kode unik baru tetap disimpan di sistem.`,
+                        emailContent: `Kode Undangan: ${newUniqueCode}`,
+                    };
+                    targetStatus = 'pending';
+                }
+            }
             const updated = await this.prisma.user.update({
                 where: { id: existing.id },
                 data: {
@@ -283,25 +310,17 @@ let AuthService = class AuthService {
                     divisionId: data.divisionId || existing.divisionId,
                     inviteCode: newUniqueCode,
                     passwordHash: newPasswordHash,
-                    inviteStatus: shouldSend ? 'sent' : 'pending',
-                    invitedAt: shouldSend ? new Date() : existing.invitedAt,
+                    inviteStatus: targetStatus,
+                    invitedAt: targetInvitedAt,
                 },
                 include: { division: true },
             });
-            let emailRes = null;
-            if (shouldSend) {
-                emailRes = await this.emailService.sendEmployeeInviteEmail({
-                    toEmail: data.email,
-                    employeeName: updated.fullName,
-                    organizationName: currentUser.organization.name,
-                    divisionName: updated.division?.name || division.name,
-                    inviteCode: newUniqueCode,
-                });
-            }
             return {
                 success: true,
                 message: shouldSend
-                    ? `Undangan berhasil dikirimkan ulang dengan kode unik baru (${newUniqueCode}) ke ${data.email}!`
+                    ? (emailRes?.success !== false
+                        ? `Undangan resmi berhasil dikirimkan ulang ke email ${data.email} dengan kode unik: ${newUniqueCode}`
+                        : `Data karyawan ${data.email} diperbarui. Email gagal dikirim: ${emailRes?.message}`)
                     : `Data karyawan ${data.email} berhasil diperbarui dengan kode baru (${newUniqueCode}).`,
                 user: {
                     id: updated.id,
@@ -319,6 +338,35 @@ let AuthService = class AuthService {
         const uniqueInviteCode = await this.generateUniqueInviteCode();
         const initialPasswordHash = bcrypt.hashSync(uniqueInviteCode, 10);
         const shouldSendEmail = data.sendEmailNow !== false;
+        let initialInviteStatus = 'pending';
+        let initialInvitedAt = null;
+        let emailResult = {
+            success: true,
+            message: 'Karyawan berhasil didaftarkan sebagai draft (belum dikirimkan email undangan).',
+            emailContent: `Kode Undangan: ${uniqueInviteCode}`,
+        };
+        if (shouldSendEmail) {
+            try {
+                emailResult = await this.emailService.sendEmployeeInviteEmail({
+                    toEmail: data.email,
+                    employeeName: data.fullName,
+                    organizationName: currentUser.organization.name,
+                    divisionName: division.name,
+                    inviteCode: uniqueInviteCode,
+                });
+                initialInviteStatus = 'sent';
+                initialInvitedAt = new Date();
+            }
+            catch (err) {
+                this.logger.error(`Gagal mengirim email undangan ke ${data.email}: ${err.message}`);
+                emailResult = {
+                    success: false,
+                    message: `Karyawan berhasil dibuat. Namun pengiriman email gagal: ${err.message}. Kode undangan: ${uniqueInviteCode}`,
+                    emailContent: `Kode Undangan: ${uniqueInviteCode}`,
+                };
+                initialInviteStatus = 'pending';
+            }
+        }
         const newEmployee = await this.prisma.user.create({
             data: {
                 fullName: data.fullName,
@@ -328,24 +376,11 @@ let AuthService = class AuthService {
                 divisionId: data.divisionId,
                 passwordHash: initialPasswordHash,
                 inviteCode: uniqueInviteCode,
-                inviteStatus: shouldSendEmail ? 'sent' : 'pending',
-                invitedAt: shouldSendEmail ? new Date() : null,
+                inviteStatus: initialInviteStatus,
+                invitedAt: initialInvitedAt,
             },
             include: { division: true },
         });
-        let emailResult = {
-            success: true,
-            message: 'Karyawan berhasil didaftarkan sebagai draft (belum dikirimkan email undangan).',
-        };
-        if (shouldSendEmail) {
-            emailResult = await this.emailService.sendEmployeeInviteEmail({
-                toEmail: data.email,
-                employeeName: data.fullName,
-                organizationName: currentUser.organization.name,
-                divisionName: division.name,
-                inviteCode: uniqueInviteCode,
-            });
-        }
         return {
             success: true,
             user: {
@@ -497,6 +532,7 @@ let AuthService = class AuthService {
                 inviteStatus: updated.inviteStatus,
                 invitedAt: updated.invitedAt,
             },
+            emailContent: emailResult?.emailContent,
             previewUrl: emailResult?.previewUrl,
         };
     }
@@ -841,7 +877,7 @@ let AuthService = class AuthService {
     }
 };
 exports.AuthService = AuthService;
-exports.AuthService = AuthService = __decorate([
+exports.AuthService = AuthService = AuthService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         jwt_1.JwtService,

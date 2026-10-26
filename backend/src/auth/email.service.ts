@@ -21,14 +21,17 @@ export class EmailService {
     // 1. Direct Gmail SMTP with Google App Password
     if ((smtpHost === 'smtp.gmail.com' || (smtpUser && smtpUser.includes('@gmail.com'))) && smtpPass) {
       this.logger.log(`Using Gmail SMTP with Superadmin account: ${smtpUser}`);
+      const cleanPass = smtpPass.replace(/\s+/g, '');
       const transporter = nodemailer.createTransport({
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
           user: smtpUser,
-          pass: smtpPass.replace(/\s+/g, ''), // Strip any spaces from 16-char App Password
+          pass: cleanPass,
         },
       });
-      const fromAddress = process.env.SMTP_FROM || `SATIVA Klinik Kecantikan <${smtpUser}>`;
+      const fromAddress = `"SATIVA Klinik Kecantikan" <${smtpUser}>`;
       return { transporter, fromAddress, isTestAccount: false };
     }
 
@@ -44,12 +47,12 @@ export class EmailService {
           pass: smtpPass,
         },
       });
-      const fromAddress = process.env.SMTP_FROM || `SATIVA Klinik Kecantikan <${smtpUser}>`;
+      const fromAddress = `"SATIVA Klinik Kecantikan" <${smtpUser}>`;
       return { transporter, fromAddress, isTestAccount: false };
     }
 
     // 3. Fallback: Ethereal SMTP Sandbox if SMTP_PASS is not configured yet
-    this.logger.warn(`⚠️ SMTP_PASS belum diisi untuk ${smtpUser}. Menggunakan Ethereal test inbox online agar proses penambahan karyawan tetap berhasil.`);
+    this.logger.warn(`⚠️ SMTP_PASS belum diisi untuk ${smtpUser}. Menggunakan Ethereal test inbox online.`);
     const testAccount = await nodemailer.createTestAccount();
     const transporter = nodemailer.createTransport({
       host: 'smtp.ethereal.email',
@@ -60,7 +63,7 @@ export class EmailService {
         pass: testAccount.pass,
       },
     });
-    const fromAddress = `SATIVA Klinik Kecantikan <${testAccount.user}>`;
+    const fromAddress = `"SATIVA Klinik Kecantikan" <${testAccount.user}>`;
     return { transporter, fromAddress, isTestAccount: true };
   }
 
@@ -75,61 +78,147 @@ export class EmailService {
       ? organizationName
       : 'SATIVA Klinik Kecantikan';
     const divName = divisionName && divisionName !== 'Tanpa Divisi' ? divisionName : 'Staf Klinik';
+    const smtpSender = process.env.EMAIL_ADMIN || process.env.SMTP_USER || 'rindimia79@gmail.com';
+    const frontendUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3000';
+    const loginLink = `${frontendUrl}/login?email=${encodeURIComponent(toEmail)}&code=${encodeURIComponent(inviteCode)}`;
 
-    const emailSubject = `Undangan Bergabung ke ${orgName} — Kode Login & Presensi SATIVA`;
+    // Anti-spam deliverability: Clear, professional Indonesian subject without fancy Unicode symbols
+    const emailSubject = `Undangan Akun Presensi SATIVA - ${orgName}`;
 
+    // Modern, crisp, deliverable HTML design (compatible with all email clients & spam filters)
     const emailHtml = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #102636; color: #ffffff; border-radius: 16px;">
-        <div style="text-align: center; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1);">
-          <h1 style="color: #a0d4e4; font-size: 24px; margin: 0;">SATIVA</h1>
-          <p style="color: #a0d4e4; font-size: 13px; margin-top: 4px;">Sistem Absensi & Kesehatan Tim — ${orgName}</p>
-        </div>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Undangan Akun Presensi SATIVA</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f1f5f9; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 580px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #0284c7 0%, #4f46e5 100%); padding: 32px 24px; text-align: center;">
+              <div style="display: inline-block; background: rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 8px 16px; margin-bottom: 8px;">
+                <span style="color: #ffffff; font-weight: 800; font-size: 20px; letter-spacing: 2px;">SATIVA</span>
+              </div>
+              <h1 style="color: #ffffff; font-size: 18px; font-weight: 700; margin: 0; text-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                Sistem Presensi & Monitoring Tim Klinik
+              </h1>
+              <p style="color: #e0f2fe; font-size: 13px; margin: 6px 0 0 0;">
+                ${orgName}
+              </p>
+            </td>
+          </tr>
 
-        <div style="padding: 24px 0;">
-          <h2 style="font-size: 18px; color: #ffffff;">Halo ${employeeName || toEmail},</h2>
-          <p style="color: #a0d4e4; font-size: 14px; line-height: 1.6;">
-            Anda telah ditambahkan oleh Tim HR ke dalam sistem <strong>${orgName}</strong> pada divisi <strong>${divName}</strong>.
-          </p>
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 32px 28px;">
+              <h2 style="font-size: 18px; color: #0f172a; margin-top: 0; margin-bottom: 12px;">
+                Halo ${employeeName || toEmail},
+              </h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #475569; margin-bottom: 20px;">
+                Anda telah resmi ditambahkan oleh Manajemen HR ke sistem presensi <strong>${orgName}</strong> pada divisi <strong>${divName}</strong>.
+              </p>
 
-          <div style="background: rgba(160,212,228,0.1); border: 1px solid rgba(160,212,228,0.3); padding: 20px; border-radius: 12px; text-align: center; margin: 24px 0;">
-            <p style="color: #a0d4e4; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 8px 0; font-weight: bold;">KODE UNDANGAN & KATA SANDI AWAL</p>
-            <span style="font-size: 28px; font-weight: bold; color: #ffffff; letter-spacing: 4px; font-family: monospace;">${inviteCode}</span>
-          </div>
+              <!-- Credentials Box -->
+              <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px; margin: 24px 0;">
+                <p style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #64748b; margin: 0 0 6px 0;">
+                  Akun Login Karyawan
+                </p>
+                <p style="font-size: 14px; color: #1e293b; margin: 4px 0 12px 0;">
+                  Email: <strong>${toEmail}</strong>
+                </p>
+                <div style="border-top: 1px dashed #cbd5e1; padding-top: 12px;">
+                  <p style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #4f46e5; margin: 0 0 6px 0;">
+                    KODE UNDANGAN & KATA SANDI AWAL
+                  </p>
+                  <div style="background-color: #ffffff; border: 2px solid #818cf8; border-radius: 8px; padding: 12px; text-align: center;">
+                    <span style="font-size: 26px; font-weight: 800; color: #312e81; letter-spacing: 4px; font-family: 'Courier New', Courier, monospace;">
+                      ${inviteCode}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-          <h3 style="font-size: 14px; color: #ffffff; margin-top: 20px;">Cara Masuk / Login ke Sistem:</h3>
-          <ol style="color: #a0d4e4; font-size: 13px; line-height: 1.8; padding-left: 20px;">
-            <li>Buka halaman aplikasi SATIVA di browser Anda.</li>
-            <li>Pada halaman Login, masukkan Email: <code>${toEmail}</code>.</li>
-            <li>Masukkan Kata Sandi / Kode Undangan: <code>${inviteCode}</code>.</li>
-            <li>Anda akan langsung diarahkan ke halaman Absensi Presensi & Kesehatan Tim.</li>
-          </ol>
-        </div>
+              <!-- Action Button -->
+              <div style="text-align: center; margin: 28px 0;">
+                <a href="${loginLink}" target="_blank" style="display: inline-block; background-color: #4f46e5; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.3);">
+                  Masuk ke Sistem SATIVA &rarr;
+                </a>
+                <p style="font-size: 11px; color: #94a3b8; margin-top: 8px;">
+                  (Atau salin tautan: <a href="${loginLink}" style="color: #4f46e5; text-decoration: underline;">${loginLink}</a>)
+                </p>
+              </div>
 
-        <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; text-align: center;">
-          <p style="color: rgba(255,255,255,0.5); font-size: 11px; margin: 0;">
-            Email ini dikirim secara resmi oleh Superadmin HR (${process.env.SMTP_USER || 'rindimia79@gmail.com'}) kepada ${toEmail}.
-          </p>
-        </div>
-      </div>
+              <!-- Steps List -->
+              <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 4px; padding: 14px 16px; margin: 24px 0;">
+                <p style="font-size: 13px; font-weight: 700; color: #1e40af; margin: 0 0 6px 0;">
+                  Petunjuk Aktivasi Pertama Kali:
+                </p>
+                <ol style="margin: 0; padding-left: 20px; font-size: 13px; color: #1e3a8a; line-height: 1.6;">
+                  <li>Klik tombol di atas untuk membuka halaman login.</li>
+                  <li>Email dan kode undangan Anda akan terisi secara otomatis.</li>
+                  <li>Lakukan registrasi biometrik wajah Anda (cukup 1 kali) saat check-in awal.</li>
+                </ol>
+              </div>
+
+              <!-- Deliverability Tip -->
+              <div style="border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px;">
+                <p style="font-size: 11px; color: #64748b; line-height: 1.5; margin: 0;">
+                  💡 <strong>Tips Email:</strong> Jika pesan ini masuk ke folder <em>Spam</em> atau tab <em>Promosi/Pembaruan</em>, silakan klik tombol <strong>"Bukan Spam" (Report not spam)</strong> agar seluruh notifikasi presensi & shift klinik selalu langsung masuk ke Kotak Masuk utama Anda.
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center;">
+              <p style="color: #64748b; font-size: 11px; margin: 0;">
+                Email resmi dikirimkan oleh HR Administrator (${smtpSender}) untuk ${toEmail}.
+              </p>
+              <p style="color: #94a3b8; font-size: 10px; margin: 4px 0 0 0;">
+                © 2026 ${orgName} • Didukung oleh SATIVA Clinic Management System
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
     `.trim();
 
     const emailText = `
 ============================================================
-UNDANGAN KARYAWAN - KLINIK KECANTIKAN SATIVA
+UNDANGAN KARYAWAN - ${orgName}
 ============================================================
 Kepada Yth. ${employeeName || toEmail},
 
-Anda telah ditambahkan oleh Tim HR ke sistem presensi klinik:
+Anda telah didaftarkan oleh Tim HR ke sistem presensi klinik:
 - Organisasi  : ${orgName}
 - Divisi      : ${divName}
 - Email Login : ${toEmail}
 
-KODE UNDANGAN / SANDI AWAL: ${inviteCode}
+KODE UNDANGAN / KATA SANDI AWAL:
+${inviteCode}
 
-Cara Masuk:
-1. Buka halaman aplikasi SATIVA di browser Anda.
-2. Masukkan Email (${toEmail}) dan Kata Sandi/Kode Undangan (${inviteCode}).
-3. Selesai! Anda siap mencatat presensi masuk dan kesehatan harian Anda.
+Tautan Login Langsung:
+${loginLink}
+
+Petunjuk Masuk:
+1. Buka tautan di atas pada browser HP / Komputer Anda.
+2. Masukkan Email (${toEmail}) dan Kode Undangan (${inviteCode}).
+3. Daftarkan master wajah Anda saat check-in perdana.
+
+Tips: Jika email ini masuk ke folder Spam/Promosi, silakan tandai "Bukan Spam" agar email operasional shift selanjutnya lancar.
 ============================================================
     `.trim();
 
@@ -139,9 +228,15 @@ Cara Masuk:
       const info = await transporter.sendMail({
         from: fromAddress,
         to: toEmail,
+        replyTo: smtpSender,
         subject: emailSubject,
         text: emailText,
         html: emailHtml,
+        headers: {
+          'X-Priority': '1 (Highest)',
+          'X-MSMail-Priority': 'High',
+          'Importance': 'High',
+        },
       });
 
       let previewUrl: string | undefined;
@@ -159,8 +254,8 @@ Cara Masuk:
       return {
         success: true,
         message: isTestAccount 
-          ? `Undangan disiapkan untuk ${toEmail}. (Untuk kirim langsung via inbox Gmail rindimia79@gmail.com, isi SMTP_PASS di backend/.env)`
-          : `Undangan resmi berhasil dikirim langsung dari Gmail rindimia79@gmail.com ke ${toEmail}`,
+          ? `Undangan disiapkan untuk ${toEmail} (Ethereal Sandbox Mode).`
+          : `Undangan resmi berhasil dikirimkan ke email ${toEmail} via Gmail (${smtpSender})`,
         emailContent: emailText,
         previewUrl,
       };
@@ -170,3 +265,4 @@ Cara Masuk:
     }
   }
 }
+

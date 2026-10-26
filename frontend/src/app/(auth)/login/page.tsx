@@ -27,6 +27,16 @@ function LoginContent() {
     if (searchParams.get('registered') === 'true') {
       setSuccessMsg(t('auth.register_success'));
     }
+    const emailParam = searchParams.get('email');
+    const codeParam = searchParams.get('code');
+    if (emailParam) {
+      setEmail(emailParam);
+    }
+    if (codeParam) {
+      setPassword(codeParam);
+      setLoginMode('invite');
+      setSuccessMsg('Kode undangan dari email terdeteksi. Silakan klik tombol "Masuk ke Sistem" untuk mengaktifkan akun Anda.');
+    }
   }, [searchParams, t]);
 
   const handleSubmit = async (e: React.FormEvent) => {

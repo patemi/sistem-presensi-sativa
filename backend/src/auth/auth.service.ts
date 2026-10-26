@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { EmailService } from './email.service';
@@ -12,6 +12,8 @@ import {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -313,6 +315,32 @@ export class AuthService {
       const newPasswordHash = bcrypt.hashSync(newUniqueCode, 10);
       const shouldSend = data.sendEmailNow !== false;
 
+      let emailRes: any = null;
+      let targetStatus = existing.inviteStatus;
+      let targetInvitedAt = existing.invitedAt;
+
+      if (shouldSend) {
+        try {
+          emailRes = await this.emailService.sendEmployeeInviteEmail({
+            toEmail: data.email,
+            employeeName: data.fullName || existing.fullName,
+            organizationName: currentUser.organization.name,
+            divisionName: existing.division?.name || division.name,
+            inviteCode: newUniqueCode,
+          });
+          targetStatus = 'sent';
+          targetInvitedAt = new Date();
+        } catch (err: any) {
+          this.logger.error(`Gagal mengirim email undangan ke ${data.email}: ${err.message}`);
+          emailRes = {
+            success: false,
+            message: `Peringatan: Gagal mengirim email via SMTP (${err.message}). Kode unik baru tetap disimpan di sistem.`,
+            emailContent: `Kode Undangan: ${newUniqueCode}`,
+          };
+          targetStatus = 'pending';
+        }
+      }
+
       const updated = await this.prisma.user.update({
         where: { id: existing.id },
         data: {
@@ -320,27 +348,18 @@ export class AuthService {
           divisionId: data.divisionId || existing.divisionId,
           inviteCode: newUniqueCode,
           passwordHash: newPasswordHash,
-          inviteStatus: shouldSend ? 'sent' : 'pending',
-          invitedAt: shouldSend ? new Date() : existing.invitedAt,
+          inviteStatus: targetStatus,
+          invitedAt: targetInvitedAt,
         },
         include: { division: true },
       });
 
-      let emailRes: any = null;
-      if (shouldSend) {
-        emailRes = await this.emailService.sendEmployeeInviteEmail({
-          toEmail: data.email,
-          employeeName: updated.fullName,
-          organizationName: currentUser.organization.name,
-          divisionName: updated.division?.name || division.name,
-          inviteCode: newUniqueCode,
-        });
-      }
-
       return {
         success: true,
         message: shouldSend
-          ? `Undangan berhasil dikirimkan ulang dengan kode unik baru (${newUniqueCode}) ke ${data.email}!`
+          ? (emailRes?.success !== false 
+              ? `Undangan resmi berhasil dikirimkan ulang ke email ${data.email} dengan kode unik: ${newUniqueCode}`
+              : `Data karyawan ${data.email} diperbarui. Email gagal dikirim: ${emailRes?.message}`)
           : `Data karyawan ${data.email} berhasil diperbarui dengan kode baru (${newUniqueCode}).`,
         user: {
           id: updated.id,
@@ -363,8 +382,37 @@ export class AuthService {
     const initialPasswordHash = bcrypt.hashSync(uniqueInviteCode, 10);
 
     const shouldSendEmail = data.sendEmailNow !== false;
+    let initialInviteStatus = 'pending';
+    let initialInvitedAt: Date | null = null;
+    let emailResult: any = {
+      success: true,
+      message: 'Karyawan berhasil didaftarkan sebagai draft (belum dikirimkan email undangan).',
+      emailContent: `Kode Undangan: ${uniqueInviteCode}`,
+    };
 
-    // 3. Simpan data karyawan baru dengan status awal
+    if (shouldSendEmail) {
+      try {
+        emailResult = await this.emailService.sendEmployeeInviteEmail({
+          toEmail: data.email,
+          employeeName: data.fullName,
+          organizationName: currentUser.organization.name,
+          divisionName: division.name,
+          inviteCode: uniqueInviteCode,
+        });
+        initialInviteStatus = 'sent';
+        initialInvitedAt = new Date();
+      } catch (err: any) {
+        this.logger.error(`Gagal mengirim email undangan ke ${data.email}: ${err.message}`);
+        emailResult = {
+          success: false,
+          message: `Karyawan berhasil dibuat. Namun pengiriman email gagal: ${err.message}. Kode undangan: ${uniqueInviteCode}`,
+          emailContent: `Kode Undangan: ${uniqueInviteCode}`,
+        };
+        initialInviteStatus = 'pending';
+      }
+    }
+
+    // 3. Simpan data karyawan baru dengan status akurat
     const newEmployee = await this.prisma.user.create({
       data: {
         fullName: data.fullName,
@@ -374,26 +422,11 @@ export class AuthService {
         divisionId: data.divisionId,
         passwordHash: initialPasswordHash,
         inviteCode: uniqueInviteCode,
-        inviteStatus: shouldSendEmail ? 'sent' : 'pending',
-        invitedAt: shouldSendEmail ? new Date() : null,
+        inviteStatus: initialInviteStatus,
+        invitedAt: initialInvitedAt,
       },
       include: { division: true },
     });
-
-    let emailResult: any = {
-      success: true,
-      message: 'Karyawan berhasil didaftarkan sebagai draft (belum dikirimkan email undangan).',
-    };
-
-    if (shouldSendEmail) {
-      emailResult = await this.emailService.sendEmployeeInviteEmail({
-        toEmail: data.email,
-        employeeName: data.fullName,
-        organizationName: currentUser.organization.name,
-        divisionName: division.name,
-        inviteCode: uniqueInviteCode,
-      });
-    }
 
     return {
       success: true,
@@ -576,6 +609,7 @@ export class AuthService {
         inviteStatus: updated.inviteStatus,
         invitedAt: updated.invitedAt,
       },
+      emailContent: emailResult?.emailContent,
       previewUrl: emailResult?.previewUrl,
     };
   }

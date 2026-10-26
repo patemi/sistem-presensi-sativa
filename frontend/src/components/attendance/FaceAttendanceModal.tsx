@@ -7,6 +7,7 @@ import {
   MapPin, ShieldCheck, ShieldAlert, RefreshCw, Send, Sparkles, Navigation, UserCheck, Users, Lock, Target
 } from 'lucide-react';
 import api from '@/lib/api';
+import { useNotification } from '@/lib/context/NotificationContext';
 
 /**
  * KONSTANTA LOKASI KLINIK (Google Maps: https://maps.app.goo.gl/9PQWdWuxfPwVrzbRA)
@@ -54,6 +55,7 @@ export default function FaceAttendanceModal({
   targetCheckOut = '17:00',
   onSuccess,
 }: FaceAttendanceModalProps) {
+  const { showNotification } = useNotification();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -239,7 +241,12 @@ export default function FaceAttendanceModal({
 
   const handleCalibrateDeskLocation = async () => {
     if (!userCoords) {
-      alert('Koordinat GPS meja Anda belum terbaca dari browser.');
+      showNotification({
+        type: 'warning',
+        title: 'Koordinat GPS Belum Siap',
+        message: 'Koordinat GPS meja Anda belum terbaca dari browser. Pastikan izin akses lokasi (GPS) telah diaktifkan pada browser Anda.',
+        badge: 'Validasi Lokasi',
+      });
       return;
     }
 
@@ -259,9 +266,18 @@ export default function FaceAttendanceModal({
       setClinicLocation(updated);
       setDistanceMeters(0.00);
       setIsLocationValid(true);
-      alert('Berhasil! Titik koordinat meja kerja Anda saat ini telah ditetapkan sebagai titik pusat klinik (Jarak: 0.00 meter).');
+      showNotification({
+        type: 'success',
+        title: 'Kalibrasi Meja Berhasil',
+        message: 'Titik koordinat meja kerja Anda saat ini telah ditetapkan sebagai titik pusat klinik (Jarak: 0.00 meter).',
+        badge: 'Pusat Klinik Terkalibrasi',
+      });
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal mengalibrasi lokasi klinik.');
+      showNotification({
+        type: 'error',
+        title: 'Gagal Kalibrasi Lokasi',
+        message: err.response?.data?.message || 'Gagal mengalibrasi lokasi klinik. Silakan periksa koneksi atau coba kembali.',
+      });
     } finally {
       setCalibratingLocation(false);
     }
@@ -389,12 +405,22 @@ export default function FaceAttendanceModal({
   // 6. Handle Register Master Face (Anti-Duplikasi & Anti-Joki)
   const handleRegisterMasterFace = async () => {
     if (detectedFaceCount > 1) {
-      alert('Peringatan: Terdeteksi lebih dari 1 orang di depan kamera. Pastikan hanya Anda sendiri saat mendaftarkan master wajah.');
+      showNotification({
+        type: 'warning',
+        title: 'Terdeteksi Lebih Dari 1 Orang',
+        message: 'Peringatan: Terdeteksi lebih dari 1 orang di depan kamera. Pastikan hanya Anda sendiri saat mendaftarkan master wajah demi keamanan akun.',
+        badge: 'Deteksi Multi-Wajah',
+      });
       return;
     }
 
     if (!liveDescriptor) {
-      alert('Wajah belum terdeteksi jelas di depan kamera. Pastikan wajah berada tepat di dalam lingkaran, pencahayaan cukup, dan lepas masker/aksesori penutup.');
+      showNotification({
+        type: 'warning',
+        title: 'Wajah Belum Terdeteksi Jelas',
+        message: 'Pastikan wajah berada tepat di dalam lingkaran, pencahayaan cukup terang, dan lepas masker/aksesori penutup wajah.',
+        badge: 'Panduan Pindai Wajah',
+      });
       return;
     }
 
@@ -408,12 +434,18 @@ export default function FaceAttendanceModal({
       setHasMasterFace(true);
       setSimilarityScore(98);
       setIsFaceMatched(true);
-      alert('Master biometrik wajah Anda berhasil disimpan dan diverifikasi unik! Sistem memastikan satu wajah hanya untuk satu akun.');
+      showNotification({
+        type: 'success',
+        title: 'Master Wajah Berhasil Disimpan',
+        message: 'Master biometrik wajah Anda berhasil disimpan dan diverifikasi unik! Sistem memastikan satu wajah fisik hanya untuk satu akun pengguna.',
+        badge: 'Biometrik Terverifikasi',
+        confirmText: 'Lanjutkan Presensi',
+      });
     } catch (err: any) {
       const errorMsg =
         err.response?.data?.message ||
         'Gagal menyimpan master wajah. Pastikan wajah Anda belum pernah didaftarkan oleh akun karyawan lain.';
-      alert(errorMsg);
+      showNotification(errorMsg);
     } finally {
       setSubmitting(false);
     }
@@ -422,12 +454,22 @@ export default function FaceAttendanceModal({
   // 7. Handle Submit Check-in (Datang)
   const handleSubmitCheckIn = async () => {
     if (!liveDescriptor) {
-      alert('Wajah tidak terdeteksi. Posisikan wajah Anda di depan kamera sebelum submit.');
+      showNotification({
+        type: 'warning',
+        title: 'Wajah Tidak Terdeteksi',
+        message: 'Posisikan wajah Anda tepat di depan kamera sebelum melakukan submit presensi.',
+        badge: 'Deteksi Biometrik',
+      });
       return;
     }
 
     if (detectedFaceCount > 1) {
-      alert('Terdeteksi lebih dari 1 wajah di kamera! Pastikan hanya Anda sendiri yang berada di depan kamera.');
+      showNotification({
+        type: 'warning',
+        title: 'Terdeteksi Lebih Dari 1 Wajah',
+        message: 'Pastikan hanya Anda sendiri yang berada di depan kamera saat mencatat presensi kehadiran.',
+        badge: 'Keamanan Presensi',
+      });
       return;
     }
 
@@ -458,7 +500,11 @@ export default function FaceAttendanceModal({
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Gagal memproses presensi kehadiran.';
       setStatusMessage('');
-      alert(msg);
+      showNotification({
+        type: 'error',
+        title: 'Presensi Kehadiran Gagal',
+        message: msg,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -467,12 +513,22 @@ export default function FaceAttendanceModal({
   // 8. Handle Submit Check-out (Pulang)
   const handleSubmitCheckOut = async () => {
     if (!mentalHealthLog.trim()) {
-      alert('Teks unek-unek / catatan harimu wajib diisi.');
+      showNotification({
+        type: 'warning',
+        title: 'Catatan Harian Wajib Diisi',
+        message: 'Ceritakan harimu atau unek-unek Anda hari ini sebelum melakukan presensi kepulangan.',
+        badge: 'Refleksi Tim Klinik',
+      });
       return;
     }
 
     if (!liveDescriptor) {
-      alert('Wajah tidak terdeteksi. Posisikan wajah Anda di depan kamera.');
+      showNotification({
+        type: 'warning',
+        title: 'Wajah Tidak Terdeteksi',
+        message: 'Posisikan wajah Anda tepat di depan kamera sebelum submit kepulangan.',
+        badge: 'Deteksi Biometrik',
+      });
       return;
     }
 
@@ -504,7 +560,11 @@ export default function FaceAttendanceModal({
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Gagal memproses presensi kepulangan.';
       setStatusMessage('');
-      alert(msg);
+      showNotification({
+        type: 'error',
+        title: 'Presensi Kepulangan Gagal',
+        message: msg,
+      });
     } finally {
       setSubmitting(false);
     }

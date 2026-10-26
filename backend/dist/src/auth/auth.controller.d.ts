@@ -244,6 +244,7 @@ export declare class AuthController {
             inviteStatus: string;
             invitedAt: Date | null;
         };
+        emailContent: any;
         previewUrl: any;
     }>;
     getDivisions(req: any): Promise<{

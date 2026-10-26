@@ -14,6 +14,7 @@ import CheckoutAttendanceCard from '@/components/attendance/CheckoutAttendanceCa
 import EmployeeScheduleView from '@/components/schedule/EmployeeScheduleView';
 import EditPasswordModal from '@/components/profile/EditPasswordModal';
 import FaceAttendanceModal, { CLINIC_LOCATION } from '@/components/attendance/FaceAttendanceModal';
+import { useNotification } from '@/lib/context/NotificationContext';
 import { 
   Smile, Frown, Meh, SmilePlus, LogIn, 
   Send, Calendar, Clock, LogOut, CheckCircle, 
@@ -34,6 +35,7 @@ export default function CheckinPage() {
 function CheckinContent() {
   const { user, logout } = useAuth();
   const { t } = useTranslation();
+  const { showNotification } = useNotification();
   const router = useRouter();
 
   const [loading, setLoading] = useState(false);
@@ -154,7 +156,13 @@ function CheckinContent() {
 
   const handleOpenFaceCheckOut = () => {
     if (!canCheckout) {
-      alert(`Tombol absen pulang terkunci. Anda baru dapat melakukan presensi kepulangan setelah jam ${targetCheckOut} WIB.`);
+      showNotification({
+        type: 'warning',
+        title: 'Presensi Pulang Terkunci',
+        message: `Tombol absen pulang terkunci. Anda baru dapat melakukan presensi kepulangan setelah jam ${targetCheckOut} WIB sesuai jadwal shift kerja Anda.`,
+        badge: 'Jadwal Shift Kerja',
+        confirmText: 'Saya Mengerti',
+      });
       return;
     }
     setFaceModalMode('checkout');

@@ -10,6 +10,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import HRDynamicScheduleInput from './HRDynamicScheduleInput';
 import ClinicScheduleMatrix from './ClinicScheduleMatrix';
+import { useNotification } from '@/lib/context/NotificationContext';
 
 interface ScheduleItem {
   id: string;
@@ -42,6 +43,7 @@ interface SwapRequest {
 }
 
 export default function AdminScheduleManagement() {
+  const { showPrompt } = useNotification();
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [swapRequests, setSwapRequests] = useState<SwapRequest[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -174,24 +176,34 @@ export default function AdminScheduleManagement() {
   };
 
   const handleRejectSwap = async (swapId: string) => {
-    const reason = prompt('Masukkan alasan penolakan (opsional):') || '';
-    setActionLoadingId(swapId);
-    setApprovalAlert(null);
-    try {
-      await api.patch(`/schedule/swap-request/${swapId}/reject`, { reason });
-      setApprovalAlert({
-        type: 'success',
-        text: 'Permohonan tukar shift berhasil ditolak.',
-      });
-      fetchData();
-    } catch (err: any) {
-      setApprovalAlert({
-        type: 'error',
-        text: err.response?.data?.message || err.message || 'Gagal menolak tukar shift.',
-      });
-    } finally {
-      setActionLoadingId(null);
-    }
+    showPrompt({
+      type: 'warning',
+      title: 'Tolak Permohonan Tukar Shift',
+      message: 'Masukkan alasan penolakan permohonan tukar shift ini (opsional):',
+      placeholder: 'Contoh: Jadwal klinik sedang padat / kuota staf penuh...',
+      badge: 'Persetujuan Shift',
+      confirmText: 'Tolak Permohonan',
+      cancelText: 'Batal',
+      onConfirm: async (reason: string) => {
+        setActionLoadingId(swapId);
+        setApprovalAlert(null);
+        try {
+          await api.patch(`/schedule/swap-request/${swapId}/reject`, { reason });
+          setApprovalAlert({
+            type: 'success',
+            text: 'Permohonan tukar shift berhasil ditolak.',
+          });
+          fetchData();
+        } catch (err: any) {
+          setApprovalAlert({
+            type: 'error',
+            text: err.response?.data?.message || err.message || 'Gagal menolak tukar shift.',
+          });
+        } finally {
+          setActionLoadingId(null);
+        }
+      },
+    });
   };
 
   const pendingSwaps = swapRequests.filter((r) => r.status === 'PENDING');
